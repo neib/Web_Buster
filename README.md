@@ -2,7 +2,7 @@
 Search for subdomains, directories, and files for a given URL.</br>
 ## Requirements
 - curl</br>
-- bc</br></br>
+- bc</br>
 
 `apt install curl bc`</br>
 ## Usage
