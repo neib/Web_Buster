@@ -1,5 +1,5 @@
 # Web Buster
-Search for subdomains, directories, and files for a given URL.</br>
+A Web search tool for subdomains, directories, and files for a given URL.</br>
 ## Requirements
 - curl</br>
 - bc</br>
