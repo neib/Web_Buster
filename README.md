@@ -35,3 +35,9 @@ A Web search tool for subdomains, directories, and files for a given URL.</br>
 &nbsp;&nbsp;./buster.sh --mode dir -u https://other.domain.com/somedire/ -w directories.list --ignore-cert</br>
 &nbsp;&nbsp;./buster.sh -m file -u https://www.another.com/files -w files.list --ignore-cert -z 200</br>
 &nbsp;&nbsp;./buster.sh -m dir -u https://againandagain.com/ -w directories.list --no-check --no-slash --verbose</br>
+</br>
+</br>
+## Notes
+The subdomains module is partly inspired by this project: https://github.com/UnaPibaGeek/ctfr</br>
+It just look for certificate logs at: https://crt.sh/</br>
+Of course, you can use a dictionary attack for subdomains enumeration.</br>
