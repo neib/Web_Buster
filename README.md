@@ -1,6 +1,6 @@
 # Web Buster
 Search for subdomains, directories, and files for a given URL.</br>
-##Requirements
+## Requirements
 curl</br>
 bc</br>
 ## Usage
