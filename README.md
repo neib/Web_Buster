@@ -40,5 +40,5 @@ A Web search tool for subdomains, directories, and files for a given URL.</br>
 </br>
 ## Notes
 The subdomains module is partly inspired by this project: https://github.com/UnaPibaGeek/ctfr</br>
-It just look for certificate logs at: https://crt.sh/</br>
+It just look for Certificate Transparency Logs at: https://crt.sh/</br>
 Of course, you can use a dictionary attack for subdomains enumeration.</br>
