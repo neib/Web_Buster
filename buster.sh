@@ -51,8 +51,8 @@ usage() {
     echo
 }
 
-# crt.sh|Certificate Search check | Certificate Transparency Logs
-crt() {
+# Certificate Transparency Logs [ crt.sh|Certificate Search ]
+CTL() {
     echo " Requesting crt.sh..."
     # Curl request to retrieve the JSON list
     req=$(curl -s "https://crt.sh/?q=${domain}&output=json")
@@ -76,42 +76,52 @@ crt() {
     echo -e "[!] Now checking which subdomains are up....\n"
 
     # Checking which subdomains are up
-    discovered=0
+    DISCOVERED=0
     for subdomain in "${subdomains[@]}"; do
-        target="$protocol$subdomain"
-        # Check if --ignore-cert is enabled to perform a curl command
-        if [[ $NOCERT ]]; then
-            code=$(curl -k -s -o /dev/null -w "%{http_code}" $target)
-        else
-            code=$(curl -s -o /dev/null -w "%{http_code}" $target)
-        fi
-
-        # Displays discoveries
-        if [[ "$code" != "000" ]]; then
-            # DNS name resolution
-            ipaddr=$(dig $subdomain +short)
-            # Show result
-            echo "  $target [$code] $ipaddr"
-            ((discovered++))
-        elif [[ $VERBOSE == 1 ]]; then
-            # Clear the last line if the HTTP code is not good
-            echo -ne "\033[2K\r"
-            echo -ne "$target\r"
-        fi
-
-        # Sleep
-        if [[ -v TIMER ]]; then
-            sleep $(echo "$TIMER/1000" | bc -l)
-        fi
+        TARGET="$protocol$subdomain"
+        CONTROL_CODE="000"
+        SUBDOMAIN="$subdomain"
+        BUSTER
     done
 
     # Nothing found
-    if [[ $discovered == 0 ]]; then
+    if [[ $DISCOVERED == 0 ]]; then
         echo -e "[!] None of the subdomains seem to be up...\n"
     else
         # Clear the last line if the HTTP code is not good
         echo -e "\033[2K\r"
-        echo -e "[!] End of Certificate Transparency Logs results.\n"
+        echo -e "[!] End of Certificate Transparency Logs.\n"
+    fi
+}
+
+# Requester
+BUSTER() {
+    # Check if --ignore-cert is enabled to perform curl command
+    if [[ $NOCERT ]]; then
+        CODE=$(curl -k -s -o /dev/null -w "%{http_code}" $TARGET)
+    else
+        CODE=$(curl -s -o /dev/null -w "%{http_code}" $TARGET)
+    fi
+
+    # # Check the HTTP code and display discoveries
+    if [[ "$CODE" != "$CONTROL_CODE" ]]; then
+        # DNS name resolution for subdomain enumeration
+        IPADDR=""
+        if [[ "$MODE" == "sub" ]]; then
+            IPADDR=$(dig $SUBDOMAIN +short)
+        fi
+        # Show result
+        echo "  $TARGET [$CODE] $IPADDR"
+        ((DISCOVERED++))
+    elif [[ $VERBOSE == 1 ]]; then
+        # Clear the last line if the HTTP code is not good
+        echo -ne "\033[2K\r"
+        echo -ne "$TARGET\r"
+    fi
+
+    # Sleep
+    if [[ -v TIMER ]]; then
+        sleep $(echo "$TIMER/1000" | bc -l)
     fi
 }
 
@@ -237,6 +247,7 @@ fi
 
 # Check that the target is reachable
 if [[ $NOCHECK != 1 ]]; then
+    echo "Checking that the target is reachable..."
     if [[ $NOCERT == 1 ]]; then
         CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" $URL)
     else
@@ -246,12 +257,13 @@ if [[ $NOCHECK != 1 ]]; then
         echo -e "Error : The provided URL seems to be down.\n"
         exit 1
     fi
+    echo -e "OK.\n"
 fi
 
-# Call crt to request crt.sh|Certificate Search
+# Call CTL to request crt.sh|Certificate Search
 if [[ "$MODE" == "sub" ]]; then
     if [[ $NOCRT != 1 ]]; then
-        crt
+        CTL
     fi
 fi
 
@@ -267,12 +279,12 @@ echo -e "[!] Browsing dictionary in progress...\n"
 
 # Number of loot items
 DISCOVERED=0
-# Check the HTTP code and display discoveries
 while read WHAT; do
     # Prepare the target URL
     if [[ "$MODE" == "sub" ]]; then
         TARGET="$protocol$WHAT.$domain"
         CONTROL_CODE="000"
+        SUBDOMAIN="$WHAT.$domain"
         LOOT="subdomains"
     elif [[ "$MODE" == "file" ]]; then
         TARGET="$URL$WHAT"
@@ -287,43 +299,21 @@ while read WHAT; do
         CONTROL_CODE="404"
         LOOT="directories"
     fi
+    BUSTER
 
-    # Check if --ignore-cert is enabled to perform a curl command
-    if [[ $NOCERT ]]; then
-        CODE=$(curl -k -s -o /dev/null -w "%{http_code}" $TARGET)
-    else
-        CODE=$(curl -s -o /dev/null -w "%{http_code}" $TARGET)
-    fi
-
-    # Displays discoveries
-    if [[ "$CODE" != "$CONTROL_CODE" ]]; then
-        # If subdomain mode DNS name resolution
-        IPADDR=""
-        if [[ "$MODE" == "sub" ]]; then
-            IPADDR=$(dig $WHAT.$domain +short)
-        fi
-        # Show result
-        echo "  $TARGET [$CODE] $IPADDR"
-        ((DISCOVERED++))
-    elif [[ $VERBOSE == 1 ]]; then
-        # Clear the last line if the HTTP code is not good
-        echo -ne "\033[2K\r"
-        echo -ne "$TARGET\r"
-    fi
-
-    # Sleep
-    if [[ -v TIMER ]]; then
-        sleep $(echo "$TIMER/1000" | bc -l)
-    fi
 # Use wordlist as input
 done < "$WORDS"
 
 # Nothing found
 if [[ $DISCOVERED == 0 ]]; then
-    echo -e "[!] No $LOOT were found. Try the ‘--ignore-cert’ option.\n"
+    if [[ NOCERT != 1 ]]; then
+        echo -e "[!] No $LOOT were found. Try ‘--ignore-cert’ option.\n"
+    else
+        echo -e "[!] No $LOOT were found.\n"
+    fi
 else
     # Clear the last line if the HTTP code is not good
     echo -e "\033[2K\r"
-    echo -e "[!] End of dictionary enumeration.\n"
+    echo -e "[!] End of dictionary enumeration with $DISCOVERED item(s) found.\n"
     echo -e "\nThe program terminated successfully."
 fi
