@@ -42,7 +42,7 @@ usage() {
     echo
 }
 
-# crt.sh|Certificate Search check
+# crt.sh|Certificate Search check | Certificate Transparency Logs
 crt() {
     echo " Requesting crt.sh..."
     # Curl request to retrieve the JSON list
@@ -64,6 +64,46 @@ crt() {
         echo "  $subdomain"
     done
     echo
+    echo -e "[!] Now checking which subdomains are up....\n"
+
+    # Checking which subdomains are up
+    discovered=0
+    for subdomain in "${subdomains[@]}"; do
+        target="$protocol$subdomain"
+        # Check if --ignore-cert is enabled to perform a curl command
+        if [[ $NOCERT ]]; then
+            code=$(curl -k -s -o /dev/null -w "%{http_code}" $target)
+        else
+            code=$(curl -s -o /dev/null -w "%{http_code}" $target)
+        fi
+
+        # Displays discoveries
+        if [[ "$code" != "000" ]]; then
+            # DNS name resolution
+            ipaddr=$(dig $subdomain +short)
+            # Show result
+            echo "  $target [$code] $ipaddr"
+            ((discovered++))
+        elif [[ $VERBOSE == 1 ]]; then
+            # Clear the last line if the HTTP code is not good
+            echo -ne "\033[2K\r"
+            echo -ne "$target\r"
+        fi
+
+        # Sleep
+        if [[ -v TIMER ]]; then
+            sleep $(echo "$TIMER/1000" | bc -l)
+        fi
+    done
+
+    # Nothing found
+    if [[ $discovered == 0 ]]; then
+        echo -e "[!] None of the subdomains seem to be up...\n"
+    else
+        # Clear the last line if the HTTP code is not good
+        echo -e "\033[2K\r"
+        echo -e "[!] End of Certificate Transparency Logs results.\n"
+    fi
 }
 
 # No argument, print Usage and exit
@@ -208,13 +248,13 @@ fi
 
 # Close the program if crt-only is set to 1
 if [[ $CRTO == 1 ]]; then
-    echo -e "If you are not completely satisfied with this result, you can also try a dictionary attack.\n"
+    echo -e "\nThe program terminated successfully."
     exit 0
 fi
 
-# Dig
-echo " Searching..."
-echo -e "[!] Enumeration in progress...\n"
+# Dictionary path
+echo " Enumerate..."
+echo -e "[!] Browsing dictionary in progress...\n"
 
 # Number of loot items
 DISCOVERED=0
@@ -248,7 +288,13 @@ while read WHAT; do
 
     # Displays discoveries
     if [[ "$CODE" != "$CONTROL_CODE" ]]; then
-        echo "  $TARGET [$CODE]"
+        # If subdomain mode DNS name resolution
+        IPADDR=""
+        if [[ "$MODE" == "sub" ]]; then
+            IPADDR=$(dig $WHAT.$domain +short)
+        fi
+        # Show result
+        echo "  $TARGET [$CODE] $IPADDR"
         ((DISCOVERED++))
     elif [[ $VERBOSE == 1 ]]; then
         # Clear the last line if the HTTP code is not good
@@ -269,4 +315,6 @@ if [[ $DISCOVERED == 0 ]]; then
 else
     # Clear the last line if the HTTP code is not good
     echo -e "\033[2K\r"
+    echo -e "[!] End of dictionary enumeration.\n"
+    echo -e "\nThe program terminated successfully."
 fi
