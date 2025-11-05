@@ -32,12 +32,16 @@ A Web search tool for subdomains, directories, and files for a given URL.</br>
 &nbsp;&nbsp;-ns, --no-slash                                  Do not add a final '/' to the directory name.</br>
 </br>
 <b>Examples:</b></br>
-&nbsp;&nbsp;./buster.sh -m sub -u http://domain.com -w subdomains.list</br>
-&nbsp;&nbsp;./buster.sh --mode dir -u https://other.domain.com/somedire/ -w directories.list --ignore-cert</br>
-&nbsp;&nbsp;./buster.sh -m file -u https://www.another.com/files -w files.list --ignore-cert -z 200</br>
-&nbsp;&nbsp;./buster.sh -m dir -u https://againandagain.com/ -w directories.list --no-check --no-slash --verbose</br>
-&nbsp;&nbsp;./buster.sh --mode sub -u https://againagainagain.com -c</br>
-</br>
+&nbsp;&nbsp;<i>./buster.sh -m sub -u http://domain.com -w subdomains.list</i></br>
+&nbsp;* Subdomain discovery for 'http://domain.com' using the wordlist 'subdomains.list'.</br></br>
+&nbsp;&nbsp;<i>./buster.sh --mode dir -u https://other.domain.com/somedire/ -w directories.list --ignore-cert</i></br>
+&nbsp;* Directory discovery for 'https://other.domain.com/somedire/' using the wordlist 'directories.list' and ignoring secutity certificates.</br></br>
+&nbsp;&nbsp;<i>./buster.sh -m file -u https://www.another.com/files -w files.list --ignore-cert -z 200</i></br>
+&nbsp;* File discovery for 'https://www.another.com/files/' using the wordlist 'files.list' with a delay of 0.2s and ignoring secutity certificates.</br></br>
+&nbsp;&nbsp;<i>./buster.sh -m dir -u https://againandagain.com/ -w directories.list --no-check --no-slash --verbose</i></br>
+&nbsp;* Directory discovery for 'https://againandagain.com/' using the wordlist 'directories.list'. Does not check if the target is up, does not add a final '/' to the directory name and display the currently tested directory.</br></br>
+&nbsp;&nbsp;<i>./buster.sh --mode sub -u https://againagainagain.com -c</i></br>
+&nbsp;* Subdomain discovery for 'https://gainagainagain.com' using the wordlist 'subdomains.list' using only Certificate Transparency logs.</br></br>
 ## Notes
 The subdomains module is partly inspired by this project: https://github.com/UnaPibaGeek/ctfr</br>
 It just look for Certificate Transparency Logs at: https://crt.sh/</br>
