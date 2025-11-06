@@ -54,7 +54,7 @@ usage() {
 CTL() {
     echo " Requesting crt.sh..."
     # Curl request to retrieve the JSON list
-    req=$(curl -s "https://crt.sh/?q=${domain}&output=json")
+    req=$(curl -A "$USER_AGENT" -s "https://crt.sh/?q=${domain}&output=json")
 
     if [ $? -ne 0 ] || [ -z "$req" ]; then
         echo -e "[!] Information from crt.sh|Certificate Search are not available.\n"
@@ -104,14 +104,22 @@ BUSTER() {
         # Activate wap mode
         if [[ "$MODE" == "sub" ]]; then
             if [[ $FOLLOW == 1 ]]; then
-                CODE=$(curl -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
+                CODE_AND_LOCATION=$(curl -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" $TARGET)
+
+                # Extract the HTTP code and the final location
+                CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+                FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
                 CODE=$(curl -k -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
             fi
         # No wap
         else
             if [[ $FOLLOW == 1 ]]; then
-                CODE=$(curl -k -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code}" $TARGET)
+                CODE_AND_LOCATION=$(curl -k -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code} %{url_effective}" $TARGET)
+
+                # Extract the HTTP code and the final location
+                CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+                FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
                 CODE=$(curl -k -A "$USER_AGENT" -s -o /dev/null -w "%{http_code}" $TARGET)
             fi
@@ -121,14 +129,22 @@ BUSTER() {
         # Activate wap mode
         if [[ "$MODE" == "sub" ]]; then
             if [[ $FOLLOW == 1 ]]; then
-                CODE=$(curl -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
+                CODE_AND_LOCATION=$(curl -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" $TARGET)
+
+                # Extract the HTTP code and the final location
+                CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+                FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
                 CODE=$(curl -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
             fi
         # No wap
         else
             if [[ $FOLLOW == 1 ]]; then
-                CODE=$(curl -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code}" $TARGET)
+                CODE_AND_LOCATION=$(curl -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code} %{url_effective}" $TARGET)
+
+                # Extract the HTTP code and the final location
+                CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+                FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
                 CODE=$(curl -A "$USER_AGENT" -s -o /dev/null -w "%{http_code}" $TARGET)
             fi
@@ -144,6 +160,13 @@ BUSTER() {
         fi
         # Show result
         echo "  $TARGET [$CODE] $IPADDR"
+
+        if [[ -v FINAL_LOCATION ]]; then
+            if [[ $URL != $FINAL_LOCATION ]]; then
+                echo "[!] You have been redirected to: $FINAL_LOCATION"
+            fi
+        fi
+
         # If sub mode do WAP
         if [[ "$MODE" == "sub" ]]; then
             WAP
@@ -505,13 +528,21 @@ if [[ $NOCHECK != 1 ]]; then
     echo "Checking that the target is reachable... ($IPADDR)"
     if [[ $NOCERT == 1 ]]; then
         if [[ $FOLLOW == 1 ]]; then
-            CHECK_CODE=$(curl -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
+            CODE_AND_LOCATION=$(curl -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
+
+            # Extract the HTTP code and the final location
+            CHECK_CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+            FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
         else
             CHECK_CODE=$(curl -k -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
         fi
     else
         if [[ $FOLLOW == 1 ]]; then
-            CHECK_CODE=$(curl -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
+            CODE_AND_LOCATION=$(curl -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
+
+            # Extract the HTTP code and the final location
+            CHECK_CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+            FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
         else
             CHECK_CODE=$(curl -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
         fi
@@ -519,6 +550,12 @@ if [[ $NOCHECK != 1 ]]; then
     if [[ "$CHECK_CODE" == "000" ]]; then
         echo -e "Error : The provided URL seems to be down. Try ‘--ignore-cert’ option\n"
         exit 1
+    fi
+
+    if [[ -v FINAL_LOCATION ]]; then
+        if [[ $URL != $FINAL_LOCATION ]]; then
+            echo "[!] You have been redirected to: $FINAL_LOCATION"
+        fi
     fi
 
     # Background information of the target
