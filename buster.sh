@@ -45,8 +45,8 @@ usage() {
     echo "     * Directory discovery for 'https://againandagain.com/' using the wordlist 'directories.list'. Does not check if the target is up, does not add a final '/' to the directory name and display the currently tested directory."
     echo "  $0 --mode sub -u https://againagainagain.com"
     echo "     * Subdomain discovery for 'https://gainagainagain.com' using only Certificate Transparency logs."
-    echo "  $0 --mode wap -u https://otherone.com"
-    echo "     * Background information for 'https://otherone.com'. Does not follow redirects"
+    echo "  $0 --mode wap -u https://otherone.com -f"
+    echo "     * Background information for 'https://otherone.com' following redirects"
     echo
 }
 
