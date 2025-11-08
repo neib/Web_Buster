@@ -7,31 +7,40 @@
 #          $0 -m file -u https://example.com/dir/ -w files.list
 #          $0 -m wap -u https://example.com
 
-# Print help
+
+# ---------------------------------------------------------------------------- #
+# Functions
+# ---------------------------------------------------------------------------- #
+#=== Print help ===
 usage() {
     echo "---+++===[ Web Buster ]===+++---"
     echo " A Web search tool for subdomains, directories, and files for a given URL."
     echo
-    echo -e "    \033[1mUsage:\033[0m $0 -m <mode> -u <URL> -w <wordlist> [--ignore-cert] [-z <milliseconds>] [--no-check] [[--no-crt]] [[--no-slash]] [-f] [-v]"
+    echo -e "    \033[1mUsage:\033[0m $0 -m <mode> -u <URL> -w <wordlist> [-i] [-z <milliseconds>] [-nc] [[-nC]] [[-ns]] [-f] [-v] [[-I]]"
     echo
     echo -e "\033[1mArguments:\033[0m"
     echo "  -h, --help                                  Print this help"
-    echo "  -m <mode>, --mode <mode>                    Specify what to search for"
+    echo "  -m, --mode <mode>                           Specify what to search for"
     echo "                                              The mode can be : sub (Subdomain discovery)"
     echo "                                                                dir (Directory discovery)"
     echo "                                                                file (File discovery)"
     echo "                                                                wap (Background information)"
-    echo "  -u <url>, --url <url>                       Specify a target"
-    echo "  -w <wordlist>, --wordlist <wordlist>        Specify a dictionary to use (Optional for Subdomain discovery) (Do not use with Background information)"
+    echo "  -u, --url <url>                             Specify a target"
+    echo "  -w, --wordlist <wordlist>                   Specify a dictionary to use (Optional for Subdomain discovery) (Do not use with Background information)"
     echo
     echo -e "\033[1mOptional:\033[0m"
     echo "  -i, --ignore-cert                           Perform 'insecure' SSL connection"
-    echo "  -z <milliseconds>, --timer <milliseconds>   Waiting between requests"
+    echo "  -z, --timer <milliseconds>                  Waiting between requests"
     echo "  -nc, --no-check                             Do not attempt to contact the site initially"
     echo "  -f, --follow                                Follow redirects"
+    echo "  -p, --proxy <[protocol://]host[:port]>      Use this proxy"
+    echo "  -A, --user-agent '<user-agent>'             Custom User Agent"
     echo "  -v, --verbose                               Verbose mode"
     echo "  -nC, --no-crt                               Do not check information from crt.sh|Certificate Search (Subdomain discovery only)"
     echo "  -ns, --no-slash                             Do not add a final '/' to the directory name (Directory discovery only)"
+    echo "  -r, --recursive                             Recursive search (Subdomain and Directory discovery only)"
+    echo "  -P, --max-parallel <max-parallel>           Multiprocessing (Do not use with Background information)"
+    echo "  -I, --inhaler                               Additional search for links (Background information only)"
     echo
     echo
     echo -e "\033[1mExamples:\033[0m"
@@ -50,11 +59,11 @@ usage() {
     echo
 }
 
-# Certificate Transparency Logs [ crt.sh|Certificate Search ]
+#=== Certificate Transparency Logs [ crt.sh|Certificate Search ] ===
 CTL() {
     echo " Requesting crt.sh..."
     # Curl request to retrieve the JSON list
-    req=$(curl -A "$USER_AGENT" -s "https://crt.sh/?q=${domain}&output=json")
+    req=$(curl $CURLPROXY -s "https://crt.sh/?q=${domain}&output=json")
 
     if [ $? -ne 0 ] || [ -z "$req" ]; then
         echo -e "[!] Information from crt.sh|Certificate Search are not available.\n"
@@ -76,7 +85,6 @@ CTL() {
     echo -e "[!] Requesting in progress...\n"
 
     # Checking which subdomains are up
-    DISCOVERED=0
     for subdomain in "${subdomains[@]}"; do
         TARGET="$protocol$subdomain"
         CONTROL_CODE="000"
@@ -84,45 +92,52 @@ CTL() {
         BUSTER
     done
 
+    local discovered=$(cat "$DISCOVERED_TMP_FILE")
     # Nothing found
-    if [[ $DISCOVERED == 0 ]]; then
+    if [[ $discovered == 0 ]]; then
         echo -e "[!] None of the subdomains seem to be up...\n"
     else
         # Clear the last line if the HTTP code is not good
         echo -e "\033[2K\r"
-        echo -e "[+] End of Certificate Transparency Logs with $DISCOVERED item(s) found.\n"
+        echo -e "[+] End of Certificate Transparency Logs with $discovered item(s) found.\n"
     fi
+    # Reset global counter
+    echo 0 > "$DISCOVERED_TMP_FILE"
 }
 
-# Requester
+#=== Requester ===
 BUSTER() {
     # Temp files for curl content
-    TMP_HTML=$(mktemp)
-    TMP_HEADERS=$(mktemp)
+    local TMP_HTML=$(mktemp)
+    local TMP_HEADERS=$(mktemp)
+    echo "$TMP_HTML" >> "$TEMP_FILES"
+    echo "$TMP_HEADERS" >> "$TEMP_FILES"
+
+    local counter
 
     # Check if --ignore-cert is enabled to perform curl command
     if [[ $NOCERT ]]; then
         # Activate wap mode
         if [[ "$MODE" == "sub" ]]; then
             if [[ $FOLLOW == 1 ]]; then
-                CODE_AND_LOCATION=$(curl -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" $TARGET)
+                CODE_AND_LOCATION=$(curl $CURLPROXY -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" $TARGET)
 
                 # Extract the HTTP code and the final location
                 CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
                 FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
-                CODE=$(curl -k -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
+                CODE=$(curl $CURLPROXY -k -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
             fi
         # No wap
         else
             if [[ $FOLLOW == 1 ]]; then
-                CODE_AND_LOCATION=$(curl -k -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code} %{url_effective}" $TARGET)
+                CODE_AND_LOCATION=$(curl $CURLPROXY -k -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code} %{url_effective}" $TARGET)
 
                 # Extract the HTTP code and the final location
                 CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
                 FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
-                CODE=$(curl -k -A "$USER_AGENT" -s -o /dev/null -w "%{http_code}" $TARGET)
+                CODE=$(curl $CURLPROXY -k -A "$USER_AGENT" -s -o /dev/null -w "%{http_code}" $TARGET)
             fi
         fi
     # Take care to security certificates
@@ -130,34 +145,35 @@ BUSTER() {
         # Activate wap mode
         if [[ "$MODE" == "sub" ]]; then
             if [[ $FOLLOW == 1 ]]; then
-                CODE_AND_LOCATION=$(curl -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" $TARGET)
+                CODE_AND_LOCATION=$(curl $CURLPROXY -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" $TARGET)
 
                 # Extract the HTTP code and the final location
                 CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
                 FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
-                CODE=$(curl -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
+                CODE=$(curl $CURLPROXY -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" $TARGET)
             fi
         # No wap
         else
             if [[ $FOLLOW == 1 ]]; then
-                CODE_AND_LOCATION=$(curl -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code} %{url_effective}" $TARGET)
+                CODE_AND_LOCATION=$(curl $CURLPROXY -A "$USER_AGENT" -s -L -o /dev/null -w "%{http_code} %{url_effective}" $TARGET)
 
                 # Extract the HTTP code and the final location
                 CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
                 FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
             else
-                CODE=$(curl -A "$USER_AGENT" -s -o /dev/null -w "%{http_code}" $TARGET)
+                CODE=$(curl $CURLPROXY -A "$USER_AGENT" -s -o /dev/null -w "%{http_code}" $TARGET)
             fi
         fi
     fi
 
     # Check the HTTP code and display discoveries
     if [[ "$CODE" != "$CONTROL_CODE" ]]; then
-        # DNS name resolution for subdomain enumeration
         IPADDR=""
+        # DNS name resolution for subdomain enumeration
         if [[ "$MODE" == "sub" ]]; then
-            IPADDR="($(dig $SUBDOMAIN +short))"
+            #IPADDR="($(dig $SUBDOMAIN +short))"
+            IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=example.com&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
         fi
         # Show result
         echo "[+] $TARGET [$CODE] $IPADDR"
@@ -172,12 +188,30 @@ BUSTER() {
         if [[ "$MODE" == "sub" ]]; then
             WAP
         fi
-        ((DISCOVERED++))
+
+        # Add item to counter
+        counter=$(cat "$DISCOVERED_TMP_FILE")
+        ((counter++))
+        echo "$counter" > "$DISCOVERED_TMP_FILE"
+
+        # List new potential targets
+        if [[ $RECURSIVE == 1 ]]; then
+            if [[ $FOLLOW == 1 ]]; then
+                if [[ $TARGET != $FINAL_LOCATION ]]; then
+                    echo "$FINAL_LOCATION" >> "$EFFECTIVE_LOOT"
+                else
+                    echo "$TARGET" >> "$EFFECTIVE_LOOT"
+                fi
+            else
+                echo "$TARGET" >> "$EFFECTIVE_LOOT"
+            fi
+        fi
+
     # Verbose
     elif [[ $VERBOSE == 1 ]]; then
         # Clear the last line if the HTTP code is not good
         echo -ne "\033[2K\r"
-        echo -ne "$TARGET\r"
+        echo -ne "Looking: $TARGET\r"
     fi
 
     # Sleep
@@ -189,9 +223,9 @@ BUSTER() {
     rm -f "$TMP_HTML" "$TMP_HEADERS"
 }
 
+#=== WappalyzSofter ===
 WAP() {
     echo "    |"
-
     # HTTP headers
     grep -iE 'Server:|X-Powered-By:|X-Generator|Set-Cookie:|CF-Ray:|X-Turbo-Charged-By:|Via:' "$TMP_HEADERS" | uniq | sed 's/^/    + /'
 
@@ -369,13 +403,147 @@ WAP() {
         echo "    + Cloud: $CLOUD"
       fi
     done
+    echo
 
+    if [[ $INHALER == 1 ]]; then
+        # <form action="">
+        echo "    [FORM action]"
+        grep -oP '(?i)<form\s+[^>]*action="\K[^"]+' "$TMP_HTML" | sort -u | while read -r action; do
+            echo "        + $action"
+        done
+        # <script src="">
+        echo "    [SCRIPT src]"
+        grep -oP '(?i)<script\s+[^>]*src="\K[^"]+' "$TMP_HTML" | sort -u | while read -r src; do
+            echo "        + $src"
+        done
+        # <iframe src="">
+        echo "    [IFRAME src]"
+        grep -oP '(?i)<iframe\s+[^>]*src="\K[^"]+' "$TMP_HTML" | sort -u | while read -r src; do
+            echo "        + $src"
+        done
+        # <a href="">
+        echo "    [A href]"
+        grep -oP '(?i)<a\s+[^>]*href="\K[^"]+' "$TMP_HTML" | sort -u | while read -r href; do
+            echo "        + $href"
+        done
+        # <link href="">
+        echo "    [LINK href]"
+        grep -oP '(?i)<link\s+[^>]*href="\K[^"]+' "$TMP_HTML" | sort -u | while read -r href; do
+            echo "        + $href"
+        done
+    fi
     echo
 }
-# Basic curl setup
-USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-# No argument, print Usage and exit
+#=== Recursive call ===
+RECBUSTER() {
+    # Add item to counter
+    ((RECULEV++))
+
+    # Return if no more items
+    if [ ! -s "$OLD_LOOT" ]; then
+        echo -e "\033[2K\r"
+        echo -e " No items found."
+        return
+    else
+        echo -e "\033[2K\r"
+        echo " Recursion level: $RECULEV"
+        echo -e "[!] Going deeper..."
+    fi
+
+    # Reinitialize new items list
+    rm -f "$EFFECTIVE_LOOT"
+    EFFECTIVE_LOOT=$(mktemp)
+    echo "$EFFECTIVE_LOOT" >> "$TEMP_FILES"
+
+    # Prepare new targets
+    while IFS= read -r WHAT; do
+        while IFS= read -r TARGET; do
+            if [[ "$MODE" == "sub" ]]; then
+                if [[ $TARGET =~ ^(https?://)([^/]+) ]]; then
+                    protocol=${BASH_REMATCH[1]}
+                    domain=${BASH_REMATCH[2]}
+                    TARGET="$protocol$WHAT.$domain"
+                fi
+            else
+                if [[ $NOSLASH == 1 ]]; then
+                    TARGET="$TARGET$WHAT"
+                else
+                    TARGET="$TARGET$WHAT/"
+                fi
+
+            fi
+
+            # Multiprocessing
+            if [[ ! -z $MAXPARALLEL ]]; then
+                BUSTER &
+
+                pids+=($!)
+                # Limit the number of concurrent jobs
+                while (( ${#pids[@]} >= MAXPARALLEL )); do
+                    for i in "${!pids[@]}"; do
+                        if ! kill -0 "${pids[i]}" 2>/dev/null; then
+                            unset 'pids[i]'
+                        fi
+                    done
+                    # Reindex table
+                    pids=("${pids[@]}")
+                    sleep 0.1
+                done
+            # Non-parallel execution
+            else
+                BUSTER
+            fi
+        done < "$OLD_LOOT"
+    done < "$WORDS"
+
+    # Wait for the remaining jobs
+    if [[ ! -z $MAXPARALLEL ]]; then
+        wait
+        pids=()
+    fi
+
+    # Check for new items
+    mapfile -t old < "$OLD_LOOT"
+    mapfile -t effective < "$EFFECTIVE_LOOT"
+    old_sorted=($(printf "%s\n" "${old[@]}" | sort -u))
+    effective_sorted=($(printf "%s\n" "${effective[@]}" | sort -u))
+
+    # If new items make a loop
+    if [[ "${old_sorted[*]}" != "${effective_sorted[*]}" ]]; then
+        cp "$EFFECTIVE_LOOT" "$OLD_LOOT"
+        RECBUSTER
+    fi
+}
+
+#=== SIGINT ===
+on_sigint() {
+    # Wait for the remaining jobs (if any)
+    wait
+    # Clean files
+    echo " Clean up..."
+    clean
+    echo "The program terminated prematurely."
+    exit 1
+}
+# Catch SIGINT
+trap on_sigint SIGINT
+
+#=== Clean temp files ===
+clean() {
+    while read temp_file; do
+        if [[ -f "$temp_file" ]]; then
+            rm -f "$temp_file"
+        fi
+    done < "$TEMP_FILES"
+    rm -f "$TEMP_FILES"
+}
+
+
+# ---------------------------------------------------------------------------- #
+# Argument management
+# ---------------------------------------------------------------------------- #
+#=== No argument, print Usage and exit ===
 if [[ $# -eq 0 ]]; then
     echo -e "---+++===[ Web Buster ]===+++---\n A Web search tool for subdomains, directories, and files.\n"
     echo -e "\033[1mUsage:\033[0m $0 -m <mode> -u <URL> -w <wordlist> [--ignore-cert] [-z <milliseconds>] [--no-check] [[--no-crt]] [[--no-slash]] [-f] [-v]\n"
@@ -383,7 +551,7 @@ if [[ $# -eq 0 ]]; then
     exit 1
 fi
 
-# Argument management
+#=== Index ===
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -h|--help) usage; exit 0 ;;
@@ -393,19 +561,24 @@ while [[ "$#" -gt 0 ]]; do
         -i|--ignore-cert) NOCERT=1 ;;
         -z|--timer) TIMER=$2; shift ;;
         -nc|--no-check) NOCHECK=1 ;;
+        -p|--proxy) PROXY="$2"; shift ;;
+        -A|--user-agent) UA="$2"; shift ;;
         -v|--verbose) VERBOSE=1 ;;
         -nC|--no-crt) NOCRT=1 ;;
         -ns|--no-slash) NOSLASH=1 ;;
+        -r|--recursive) RECURSIVE=1 ;;
         -f|--follow) FOLLOW=1 ;;
+        -P|--max-parallel) MAXPARALLEL=$2; shift ;;
+        -I|--inhaler) INHALER=1 ;;
         *) echo -e "\nError : Bad argument $1.\n"; exit 1 ;;
     esac
     shift
 done
 
-# Title
+#=== Title ===
 echo -e "---+++===[ Web Buster ]===+++---\n A Web search tool for subdomains, directories, and files.\n"
 
-# Required arguments
+#=== Required arguments ===
 if [[ -z "$MODE" ]]; then
     echo -e "Error : --mode is required.\n"
     exit 1
@@ -417,12 +590,12 @@ elif [[ -z "$WORDS" ]]; then
         echo -e "Error : --wordlist is required.\n"
         exit 1
     elif [[ "$MODE" == "sub" ]]; then
-        # crt-only : Certificate Transparency Logs (crt.sh|Certificate Search)
+        # crt-only
         CRTO=1
     fi
 fi
 
-# Bad argument
+#=== Bad CRTO ===
 if [[ -v WORDS && -v CRTO ]]; then
     echo -e "Error : Bad argument : Cannot use wordlist with crt-only.\n"
     exit 1
@@ -432,7 +605,7 @@ if [[ -v NOCRT && -v CRTO ]]; then
     exit 1
 fi
 
-# Bad argument
+#=== Bad arguments and modes ===
 if [[ "$MODE" == "sub" ]]; then
     if [[ $NOSLASH == 1 ]]; then
         echo -e "Error : Bad argument : Cannot use no-slash with subdomain discovery mode.\n"
@@ -447,7 +620,7 @@ elif [[ "$MODE" == "file" ]]; then
         echo -e "Error : Bad argument : Cannot use no-crt with file discovery mode.\n"
         exit 1
     fi
-# Bad mode
+#=== Bad modes ===
 elif [[ "$MODE" != "dir" && "$MODE" != "wap" ]]; then
     echo -e "Error : Bad mode : $MODE.\n"
     exit 1
@@ -458,7 +631,7 @@ else
     fi
 fi
 
-# Bad argument
+#=== Wap mode ===
 if [[ "$MODE" == "wap" ]]; then
     if [[ -v WORDS ]]; then
         echo -e "Error : Bad argument : Cannot use wordlist with background information mode.\n"
@@ -466,22 +639,46 @@ if [[ "$MODE" == "wap" ]]; then
     elif [[ -v TIMER ]]; then
         echo -e "Error : Bad argument : Cannot use timer with background information mode.\n"
         exit 1
-    elif [[ NOCHECK == 1 ]]; then
+    elif [[ $NOCHECK == 1 ]]; then
         echo -e "Error : Bad argument : Cannot use no-check with background information mode.\n"
         exit 1
-    elif [[ VERBOSE == 1 ]]; then
+    elif [[ $VERBOSE == 1 ]]; then
     echo -e "Error : Bad argument : Cannot use verbose with background information mode.\n"
         exit 1
-    elif [[ NOCRT == 1 ]]; then
+    elif [[ $NOCRT == 1 ]]; then
         echo -e "Error : Bad argument : Cannot use no-crt with background information mode.\n"
         exit 1
-    elif [[ NOSLASH == 1 ]]; then
+    elif [[ $NOSLASH == 1 ]]; then
         echo -e "Error : Bad argument : Cannot use no-slash with background information mode.\n"
         exit 1
     fi
 fi
 
-# Check whether the URL begins with HTTP or HTTPS
+#=== Inhaler ===
+if [[ "$MODE" != "wap" && $INHALER == 1 ]]; then
+    echo -e "Error : Bad argument : Cannot use inhaler without background information mode.\n"
+    exit 1
+fi
+
+#=== Recursive option ===
+if [[ "$MODE" != "sub" && "$MODE" != "dir" && $RECURSIVE == 1 ]]; then
+    echo -e "Error : Bad argument : Cannot use recursive without subdomain discovery or directory discovery mode.\n"
+    exit 1
+fi
+
+#=== Multiprocessing ===
+if [[ "$MODE" == "wap" && -v MAXPARALLEL ]]; then
+    echo -e "Error : Cannot use multiprocessing in this mode.\n"
+    exit 1
+elif [[ -v MAXPARALLEL && ! "$MAXPARALLEL" =~ ^[0-9]+$ ]]; then
+    echo -e "Error : Multiprocessing must be expressed an integer.\n"
+    exit 1
+else
+    # Useful for multiprocess management
+    pids=()
+fi
+
+#=== Check whether the URL begins with HTTP or HTTPS ===
 if [[ $URL =~ ^(https?://)([^/]+) ]]; then
     protocol=${BASH_REMATCH[1]}  # "https://"
     domain=${BASH_REMATCH[2]}    # "domain.com"
@@ -507,7 +704,7 @@ else
     exit 1
 fi
 
-# If a timer is defined, it must be an integer
+#=== If a timer is defined, it must be an integer ===
 if [[ -v TIMER ]]; then
     if [[ ! "$TIMER" =~ ^[0-9]+$ ]]; then
         echo -e "Error : Time must be expressed in milliseconds.\n"
@@ -515,84 +712,139 @@ if [[ -v TIMER ]]; then
     fi
 fi
 
-# Warns the user that the connection should be considered insecure
+#=== Warns the user that the connection should be considered insecure ===
 if [[ $NOCERT == 1 ]]; then
     echo -e "\033[1m--ignore-cert is enabled :\033[0m Treat all connections as 'insecure'."
 fi
 
-# Check that the target is reachable
+#=== Basic curl setup ===
+# User agent
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+if [[ -v UA ]]; then
+    USER_AGENT="$UA"
+fi
+# Proxy
+if [[ -v PROXY ]]; then
+    proxy_regex='^((http|socks4|socks5)://)?[^:/ ]+(:[0-9]+)?$'
+    # Check that the proxy is correct
+    if [[ "$PROXY" =~ $proxy_regex ]]; then
+        CURLPROXY="--proxy $PROXY"
+        echo "[!] Proxy in use : $PROXY"
+    else
+        echo "Error : Invalid proxy format: $PROXY"
+        exit 1
+    fi
+else
+    # If not set keep empty
+    CURLPROXY=""
+fi
+
+#=== Temporary file indexing temporary files ===
+TEMP_FILES=$(mktemp)
+
+#=== If recursive, prepare storage for new targets ===
+if [[ $RECURSIVE == 1 ]]; then
+    OLD_LOOT=$(mktemp);
+    EFFECTIVE_LOOT=$(mktemp);
+    echo "$OLD_LOOT" >> "$TEMP_FILES";
+    echo "$EFFECTIVE_LOOT" >> "$TEMP_FILES";
+    # Recursion level
+    RECULEV=0
+fi
+
+
+# ---------------------------------------------------------------------------- #
+# MAIN
+# ---------------------------------------------------------------------------- #
+#=== Check that the target is reachable ===
 if [[ $NOCHECK != 1 ]]; then
+    # Create temporary files to store the HTTP response and index them
     TMP_HTML=$(mktemp)
     TMP_HEADERS=$(mktemp)
+    echo "$TMP_HTML" >> "$TEMP_FILES"
+    echo "$TMP_HEADERS" >> "$TEMP_FILES"
 
     echo " Checking that the target is reachable..."
+    # Curl
     if [[ $NOCERT == 1 ]]; then
         if [[ $FOLLOW == 1 ]]; then
-            CODE_AND_LOCATION=$(curl -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
+            CODE_AND_LOCATION=$(curl $CURLPROXY -k -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
 
             # Extract the HTTP code and the final location
             CHECK_CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
             FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
         else
-            CHECK_CODE=$(curl -k -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
+            CHECK_CODE=$(curl $CURLPROXY -k -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
         fi
     else
         if [[ $FOLLOW == 1 ]]; then
-            CODE_AND_LOCATION=$(curl -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
+            CODE_AND_LOCATION=$(curl $CURLPROXY -A "$USER_AGENT" -s -L -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
 
             # Extract the HTTP code and the final location
             CHECK_CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
             FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
         else
-            CHECK_CODE=$(curl -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
+            CHECK_CODE=$(curl $CURLPROXY -A "$USER_AGENT" -s -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code}" --max-time 10 $URL)
         fi
     fi
+    # Target is down
     if [[ "$CHECK_CODE" == "000" ]]; then
         echo -e "\nError : The provided URL seems to be down. Try ‘--ignore-cert’ option\n"
+        clean
         exit 1
     fi
 
-    IPADDR=$(dig $domain +short)
+    # Target is up, resolve DNS name
+    #IPADDR=$(dig $domain +short)
+    IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=example.com&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
     echo "[+] $URL is up [$CHECK_CODE] ($IPADDR)"
 
+    # If redirects know where
     if [[ -v FINAL_LOCATION ]]; then
         if [[ $URL != $FINAL_LOCATION ]]; then
             echo "[!] You have been redirected to: $FINAL_LOCATION"
         fi
     fi
 
-    # Background information of the target
+    # Background information on the target
     WAP
 
-    # Close the program if in wap mode
+    # If in wap mode then close the program
     if [[ "$MODE" == "wap" ]]; then
         echo -e "The program terminated successfully."
+        clean
         exit 0
     fi
 
+    # Remove temp HTTP response
     rm -f "$TMP_HTML" "$TMP_HEADERS"
 fi
 
-# Call CTL to request crt.sh|Certificate Search
+#=== Temporary counter file for parallelism ===
+DISCOVERED_TMP_FILE=$(mktemp)
+echo 0 > "$DISCOVERED_TMP_FILE"
+echo "$DISCOVERED_TMP_FILE" >> "$TEMP_FILES"
+
+#=== Call CTL to request crt.sh|Certificate Search ===
 if [[ "$MODE" == "sub" ]]; then
     if [[ $NOCRT != 1 ]]; then
         CTL
     fi
 fi
 
-# Close the program if crt-only is set to 1
+#=== Close the program if crt-only is set to 1 ===
 if [[ $CRTO == 1 ]]; then
     echo -e "The program terminated successfully."
+    clean
     exit 0
 fi
 
-# Dictionary path
+#=== Dictionary path ===
 echo " Enumerate..."
 echo -e "[!] Browsing dictionary in progress...\n"
 
-# Number of loot items
-DISCOVERED=0
-while read WHAT; do
+#=== Loop on the dictionary ===
+while IFS= read -r WHAT; do
     # Prepare the target URL
     if [[ "$MODE" == "sub" ]]; then
         TARGET="$protocol$WHAT.$domain"
@@ -612,18 +864,65 @@ while read WHAT; do
         CONTROL_CODE="404"
         LOOT="directories"
     fi
-    BUSTER
 
+    # Multiprocessing
+    if [[ ! -z $MAXPARALLEL ]]; then
+        BUSTER &
+
+        pids+=($!)
+        # Limit the number of concurrent jobs
+        while (( ${#pids[@]} >= MAXPARALLEL )); do
+            for i in "${!pids[@]}"; do
+                if ! kill -0 "${pids[i]}" 2>/dev/null; then
+                    unset 'pids[i]'
+                fi
+            done
+            # Reindex table
+            pids=("${pids[@]}")
+            sleep 0.1
+        done
+    # Non-parallel execution
+    else
+        BUSTER
+    fi
 # Use wordlist as input
 done < "$WORDS"
 
-# Nothing found
+#=== Wait for the remaining jobs ===
+if [[ ! -z $MAXPARALLEL ]]; then
+    wait
+    pids=()
+fi
+
+#=== Recursive mode ===
+if [[ $RECURSIVE == 1 ]]; then
+    # Check for new items
+    mapfile -t old < "$OLD_LOOT"
+    mapfile -t effective < "$EFFECTIVE_LOOT"
+    old_sorted=($(printf "%s\n" "${old[@]}" | sort -u))
+    effective_sorted=($(printf "%s\n" "${effective[@]}" | sort -u))
+
+    # If new items send to RECBUSTER
+    if [[ "${old_sorted[*]}" != "${effective_sorted[*]}" ]]; then
+        cp "$EFFECTIVE_LOOT" "$OLD_LOOT"
+        RECBUSTER
+    fi
+fi
+
+#=== Retrieve the number of items ===
+DISCOVERED=$(cat "$DISCOVERED_TMP_FILE")
+
+#=== Clean ===
+clean
+
+#=== Nothing found ===
 if [[ $DISCOVERED == 0 ]]; then
     if [[ NOCERT != 1 ]]; then
         echo -e "[!] No $LOOT were found. Try ‘--ignore-cert’ option.\n"
     else
         echo -e "[!] No $LOOT were found.\n"
     fi
+#=== Success ===
 else
     # Clear the last line if the HTTP code is not good
     echo -e "\033[2K\r"
