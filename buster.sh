@@ -13,10 +13,17 @@
 # ---------------------------------------------------------------------------- #
 #=== Print help ===
 usage() {
-    echo "---+++===[ Web Buster ]===+++---"
-    echo " A Web search tool for subdomains, directories, and files for a given URL."
+    echo "            __        __   _     ____            _                       "
+    echo "---+++===[  \ \      / /__| |__ | __ ) _   _ ___| |_ ___ _ __            "
+    echo "             \ \ /\ / / _ \ '_ \|  _ \| | | / __| __/ _ \ '__|           "
+    echo "              \ V  V /  __/ |_) | |_) | |_| \__ \ ||  __/ |              "
+    echo "               \_/\_/ \___|_.__/|____/ \__,_|___/\__\___|_|    ]===+++---"
     echo
-    echo -e "    \033[1mUsage:\033[0m $0 -m <mode> -u <URL> -w <wordlist> [-i] [-z <milliseconds>] [-nc] [[-nC]] [[-ns]] [-f] [-v] [[-I]]"
+    echo "      A Web search tool for subdomains, directories, files and background information.          "
+    echo
+    echo
+    echo
+    echo -e "    \033[1mUsage:\033[0m $0 -m <mode> -u <URL> [-w <wordlist> [-i] [-z <milliseconds>] [-nc] [-f] [-p] [-A] [-v] [[-nC]] [[-ns]] [[-r]] [-P] [[-I]]]"
     echo
     echo -e "\033[1mArguments:\033[0m"
     echo "  -h, --help                                  Print this help"
@@ -173,7 +180,7 @@ BUSTER() {
         # DNS name resolution for subdomain enumeration
         if [[ "$MODE" == "sub" ]]; then
             #IPADDR="($(dig $SUBDOMAIN +short))"
-            IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=example.com&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
+            IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=$SUBDOMAIN&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
         fi
         # Show result
         echo "[+] $TARGET [$CODE] $IPADDR"
@@ -403,9 +410,9 @@ WAP() {
         echo "    + Cloud: $CLOUD"
       fi
     done
-    echo
 
     if [[ $INHALER == 1 ]]; then
+        echo
         # <form action="">
         echo "    [FORM action]"
         grep -oP '(?i)<form\s+[^>]*action="\K[^"]+' "$TMP_HTML" | sort -u | while read -r action; do
@@ -432,6 +439,7 @@ WAP() {
             echo "        + $href"
         done
     fi
+
     echo
 }
 
@@ -464,6 +472,7 @@ RECBUSTER() {
                     protocol=${BASH_REMATCH[1]}
                     domain=${BASH_REMATCH[2]}
                     TARGET="$protocol$WHAT.$domain"
+                    SUBDOMAIN="$WHAT.$domain"
                 fi
             else
                 if [[ $NOSLASH == 1 ]]; then
@@ -545,9 +554,9 @@ clean() {
 # ---------------------------------------------------------------------------- #
 #=== No argument, print Usage and exit ===
 if [[ $# -eq 0 ]]; then
-    echo -e "---+++===[ Web Buster ]===+++---\n A Web search tool for subdomains, directories, and files.\n"
-    echo -e "\033[1mUsage:\033[0m $0 -m <mode> -u <URL> -w <wordlist> [--ignore-cert] [-z <milliseconds>] [--no-check] [[--no-crt]] [[--no-slash]] [-f] [-v]\n"
-    echo -e "Type '$0 --help' for more information."
+    echo -e "---+++===[ Web Buster ]===+++---\n A Web search tool for subdomains, directories, files and background information.\n"
+    echo -e "    \033[1mUsage:\033[0m $0 -m <mode> -u <URL> [-w <wordlist> [options]]\n"
+    echo -e "Type '$0 --help' for more information about available options."
     exit 1
 fi
 
@@ -570,24 +579,33 @@ while [[ "$#" -gt 0 ]]; do
         -f|--follow) FOLLOW=1 ;;
         -P|--max-parallel) MAXPARALLEL=$2; shift ;;
         -I|--inhaler) INHALER=1 ;;
-        *) echo -e "\nError : Bad argument $1.\n"; exit 1 ;;
+        *) echo -e "\nError : Bad argument $1."; exit 1 ;;
     esac
     shift
 done
 
 #=== Title ===
-echo -e "---+++===[ Web Buster ]===+++---\n A Web search tool for subdomains, directories, and files.\n"
+echo "            __        __   _     ____            _                       "
+echo "---+++===[  \ \      / /__| |__ | __ ) _   _ ___| |_ ___ _ __            "
+echo "             \ \ /\ / / _ \ '_ \|  _ \| | | / __| __/ _ \ '__|           "
+echo "              \ V  V /  __/ |_) | |_) | |_| \__ \ ||  __/ |              "
+echo "               \_/\_/ \___|_.__/|____/ \__,_|___/\__\___|_|    ]===+++---"
+echo
+echo "      A Web search tool for subdomains, directories, files and background information.          "
+echo
+echo
+echo
 
 #=== Required arguments ===
 if [[ -z "$MODE" ]]; then
-    echo -e "Error : --mode is required.\n"
+    echo -e "Error : --mode is required."
     exit 1
 elif [[ -z "$URL" ]]; then
-    echo -e "Error : --url is required.\n"
+    echo -e "Error : --url is required."
     exit 1
 elif [[ -z "$WORDS" ]]; then
     if [[ "$MODE" != "sub" && "$MODE" != "wap" ]]; then
-        echo -e "Error : --wordlist is required.\n"
+        echo -e "Error : --wordlist is required."
         exit 1
     elif [[ "$MODE" == "sub" ]]; then
         # crt-only
@@ -597,27 +615,27 @@ fi
 
 #=== Bad CRTO ===
 if [[ -v WORDS && -v CRTO ]]; then
-    echo -e "Error : Bad argument : Cannot use wordlist with crt-only.\n"
+    echo -e "Error : Bad argument : Cannot use wordlist with crt-only."
     exit 1
 fi
 if [[ -v NOCRT && -v CRTO ]]; then
-    echo -e "Error : Bad argument : Cannot use no-crt without wordlist.\n"
+    echo -e "Error : Bad argument : Cannot use no-crt without wordlist."
     exit 1
 fi
 
 #=== Bad arguments and modes ===
 if [[ "$MODE" == "sub" ]]; then
     if [[ $NOSLASH == 1 ]]; then
-        echo -e "Error : Bad argument : Cannot use no-slash with subdomain discovery mode.\n"
+        echo -e "Error : Bad argument : Cannot use no-slash with subdomain discovery mode."
         exit 1
     fi
 elif [[ "$MODE" == "file" ]]; then
     if [[ $NOSLASH == 1 ]]; then
-        echo -e "Error : Bad argument : Cannot use no-slash with file discovery mode.\n"
+        echo -e "Error : Bad argument : Cannot use no-slash with file discovery mode."
         exit 1
     fi
     if [[ $NOCRT == 1 ]]; then
-        echo -e "Error : Bad argument : Cannot use no-crt with file discovery mode.\n"
+        echo -e "Error : Bad argument : Cannot use no-crt with file discovery mode."
         exit 1
     fi
 #=== Bad modes ===
@@ -626,7 +644,7 @@ elif [[ "$MODE" != "dir" && "$MODE" != "wap" ]]; then
     exit 1
 else
     if [[ $NOCRT == 1 ]]; then
-        echo -e "Error : Bad argument : Cannot use no-crt with dir discovery mode.\n"
+        echo -e "Error : Bad argument : Cannot use no-crt with dir discovery mode."
         exit 1
     fi
 fi
@@ -634,44 +652,44 @@ fi
 #=== Wap mode ===
 if [[ "$MODE" == "wap" ]]; then
     if [[ -v WORDS ]]; then
-        echo -e "Error : Bad argument : Cannot use wordlist with background information mode.\n"
+        echo -e "Error : Bad argument : Cannot use wordlist with background information mode."
         exit 1
     elif [[ -v TIMER ]]; then
-        echo -e "Error : Bad argument : Cannot use timer with background information mode.\n"
+        echo -e "Error : Bad argument : Cannot use timer with background information mode."
         exit 1
     elif [[ $NOCHECK == 1 ]]; then
-        echo -e "Error : Bad argument : Cannot use no-check with background information mode.\n"
+        echo -e "Error : Bad argument : Cannot use no-check with background information mode."
         exit 1
     elif [[ $VERBOSE == 1 ]]; then
-    echo -e "Error : Bad argument : Cannot use verbose with background information mode.\n"
+    echo -e "Error : Bad argument : Cannot use verbose with background information mode."
         exit 1
     elif [[ $NOCRT == 1 ]]; then
-        echo -e "Error : Bad argument : Cannot use no-crt with background information mode.\n"
+        echo -e "Error : Bad argument : Cannot use no-crt with background information mode."
         exit 1
     elif [[ $NOSLASH == 1 ]]; then
-        echo -e "Error : Bad argument : Cannot use no-slash with background information mode.\n"
+        echo -e "Error : Bad argument : Cannot use no-slash with background information mode."
         exit 1
     fi
 fi
 
 #=== Inhaler ===
 if [[ "$MODE" != "wap" && $INHALER == 1 ]]; then
-    echo -e "Error : Bad argument : Cannot use inhaler without background information mode.\n"
+    echo -e "Error : Bad argument : Cannot use inhaler without background information mode."
     exit 1
 fi
 
 #=== Recursive option ===
 if [[ "$MODE" != "sub" && "$MODE" != "dir" && $RECURSIVE == 1 ]]; then
-    echo -e "Error : Bad argument : Cannot use recursive without subdomain discovery or directory discovery mode.\n"
+    echo -e "Error : Bad argument : Cannot use recursive without subdomain discovery or directory discovery mode."
     exit 1
 fi
 
 #=== Multiprocessing ===
 if [[ "$MODE" == "wap" && -v MAXPARALLEL ]]; then
-    echo -e "Error : Cannot use multiprocessing in this mode.\n"
+    echo -e "Error : Cannot use multiprocessing in this mode."
     exit 1
 elif [[ -v MAXPARALLEL && ! "$MAXPARALLEL" =~ ^[0-9]+$ ]]; then
-    echo -e "Error : Multiprocessing must be expressed an integer.\n"
+    echo -e "Error : Multiprocessing must be expressed an integer."
     exit 1
 else
     # Useful for multiprocess management
@@ -700,14 +718,14 @@ if [[ $URL =~ ^(https?://)([^/]+) ]]; then
     fi
     echo -e "[+] TARGET : $URL\n"
 else
-    echo -e "Error : Bad URL format.\n"
+    echo -e "Error : Bad URL format."
     exit 1
 fi
 
 #=== If a timer is defined, it must be an integer ===
 if [[ -v TIMER ]]; then
     if [[ ! "$TIMER" =~ ^[0-9]+$ ]]; then
-        echo -e "Error : Time must be expressed in milliseconds.\n"
+        echo -e "Error : Time must be expressed in milliseconds."
         exit 1
     fi
 fi
@@ -789,14 +807,14 @@ if [[ $NOCHECK != 1 ]]; then
     fi
     # Target is down
     if [[ "$CHECK_CODE" == "000" ]]; then
-        echo -e "\nError : The provided URL seems to be down. Try ‘--ignore-cert’ option\n"
+        echo -e "\nError : The provided URL seems to be down. Try ‘--ignore-cert’ option"
         clean
         exit 1
     fi
 
     # Target is up, resolve DNS name
     #IPADDR=$(dig $domain +short)
-    IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=example.com&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
+    IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=$domain&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
     echo "[+] $URL is up [$CHECK_CODE] ($IPADDR)"
 
     # If redirects know where
@@ -849,7 +867,8 @@ while IFS= read -r WHAT; do
     if [[ "$MODE" == "sub" ]]; then
         TARGET="$protocol$WHAT.$domain"
         CONTROL_CODE="000"
-        SUBDOMAIN="$WHAT.$domain"
+        #SUBDOMAIN="$WHAT.$domain"
+        domain="$WHAT.$domain"
         LOOT="subdomains"
     elif [[ "$MODE" == "file" ]]; then
         TARGET="$URL$WHAT"
