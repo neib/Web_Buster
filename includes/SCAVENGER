@@ -1,0 +1,523 @@
+#=== Sensor ===
+SCAV() {
+    echo
+    echo -e "${GREEN}SCAVENGER:${NC}"
+    BASE_URL="$protocol$domain"
+
+
+    #=== Server search ===
+    echo -e "    ${BLUE}[+]${NC} Looking for Server ${CYAN}(Passive)${NC}"
+    KEYWORDS=""
+    if grep -iq "Server:" "$TMP_HEADERS"; then
+        while read -r header; do
+            echo -e "        ${GREEN}+${NC} $header"
+            KEYWORDS=$(echo "$header" | sed -E 's/^[Ss]erver: //')
+        done < <(grep -i 'Server:' "$TMP_HEADERS" | uniq)
+        if [[ ! -z "$KEYWORDS" ]]; then
+            echo
+            echo -e "      ${PURPLE}> searchsploit${NC} -w $KEYWORDS"
+            searchsploit -w $KEYWORDS
+            echo
+        fi
+    fi
+
+    #=== HTTP headers look ===
+    echo -e "    ${BLUE}[+]${NC} Looking for Headers ${CYAN}(Passive)${NC}"
+    if grep -iqE "X-Powered-By:|X-Generator|CF-Ray:|X-Turbo-Charged-By:|Via:" "$TMP_HEADERS"; then
+        grep -iE "X-Powered-By:|X-Generator|CF-Ray:|X-Turbo-Charged-By:|Via:" "$TMP_HEADERS" | uniq | while read -r header; do
+            echo -e "        ${GREEN}+${NC} $header"
+        done
+        echo
+    fi
+
+    #=== Security headers check ===
+    echo -e "    ${BLUE}[+]${NC} Security headers verification ${CYAN}(Passive)${NC}"
+    grep -iE 'Content-Security-Policy|X-Frame-Options|X-XSS-Protection' "$TMP_HEADERS" || echo -e "        ${GREEN}+${NC} Missing or weak security headers\n"
+
+    #=== Cookies signatures ===
+    echo -e "    ${BLUE}[+]${NC} Cookies signatures ${CYAN}(Passive)${NC}"
+    if grep -i "Set-Cookie:" "$TMP_HEADERS" | grep -iqE "wordpress|wp_|PHPSESSID|PrestaShop|shopify|laravel|symfony|mediawiki|phpbb"; then
+        grep -i "Set-Cookie:" "$TMP_HEADERS" | grep -iE "wordpress|wp_|PHPSESSID|PrestaShop|shopify|laravel|symfony|mediawiki|phpbb" | while read -r cook; do
+            echo -e "        ${GREEN}+${NC} $cook"
+        done
+        echo
+    fi
+
+    #=== Agressive mode check robots.txt ===
+    if [[ $AGRESSIVE == 1 ]]; then
+        agress_tmp=$(mktemp)
+        echo "$agress_tmp" >> "$TEMP_FILES"
+        echo -e "    ${BLUE}[+]${NC} Robots.txt analysis ${YELLOW}(Direct access)${NC}"
+
+        robots_status=$(curl "${CURLOPTIONS[@]}" -o "$agress_tmp" -w "%{http_code}" "${BASE_URL}/robots.txt")
+        if [[ "$robots_status" == "200" ]]; then
+            echo -e "            ${GREEN}+${NC} robots.txt found :"
+            echo "----------------------------------------------------------"
+            cat "$agress_tmp"
+            echo "----------------------------------------------------------"
+            echo
+        fi
+        rm -f "$agress_tmp"
+    fi
+
+    #=== CMS detection ===
+    echo -e "    ${BLUE}[+]${NC} Searching for CMS signatures ${CYAN}(Passive)${NC}"
+    declare -A CMS_SIGNS
+
+    CMS_SIGNS["WordPress"]="wp-login.php|wp-admin/|wp-content|wp-includes|xmlrpc.php|wp-json|set-cookie: wordpress_logged_in|wp-settings-|X-Pingback|/wp-admin/admin-ajax.php|/wp-cron.php"
+    CMS_SIGNS["Drupal"]="X-Generator: Drupal|/misc/drupal.js|sites/default/files|core/modules|/filter/tips|/batch|/comment/reply"
+    CMS_SIGNS["Joomla"]="Joomla|/administrator/manifests/files/joomla.xml|/language/en-GB/en-GB.xml|/modules/custom.xml|/templates/system/css/system.css|/templates/system/js/core.js|X-Joomla-Cache"
+    CMS_SIGNS["PrestaShop"]="PrestaShop|/modules/prestashop/prestashop.php|/themes/prestashop/assets|X-PrestaShop-Cache|/img/logo_prestashop.png|/classes/PrestaShopAutoload.php"
+    CMS_SIGNS["Magento"]="Magento|/pub/static/version|/setup/index.php|/skin/frontend|index.php?route=checkout/cart|X-Magento-Vary|/js/mage/|/var/view_preprocessed"
+    CMS_SIGNS["Shopify"]="X-Shopify-Stage|X-Shopify-Cache|X-Shopify-Api-Request|cdn.shopify.com|cdn.shopifycdn.net|X-Shopify-Hmac-Sha256|Shopify.buy|shopify-assets"
+    CMS_SIGNS["MediaWiki"]="MediaWiki|id=\"mw-|class=\"mw-|X-Powered-By: MediaWiki|/w/load.php|/w/api.php"
+
+    CMS_SIGNS["phpBB"]="phpbb3_|phpbb_sid|phpbb"
+    CMS_SIGNS["TYPO3"]="typo3|TSFE|typo3temp"
+    CMS_SIGNS["Concrete5"]="concrete5|concrete5_cid"
+    CMS_SIGNS["OpenCart"]="OpenCart|index.php?route=common/home|_oc_"
+    CMS_SIGNS["Bitrix"]="Bitrix|BX_SESSION|bitrix_sessid"
+    CMS_SIGNS["Squarespace"]="squarespace.com|squarespace-session"
+    CMS_SIGNS["Ghost"]="ghost.js|ghost-content"
+    CMS_SIGNS["ExpressionEngine"]="exp_sessionid|exp_tracker"
+    CMS_SIGNS["MODX"]="modx_session|modxVisitorId"
+    CMS_SIGNS["Umbraco"]="UmbracoPageId|umbSessionId"
+    CMS_SIGNS["Craft CMS"]="craft\\_\\w+|craft\\_\\w+\\_"
+    CMS_SIGNS["VBulletin"]="vbforum|vBulletin|vbssl"
+    CMS_SIGNS["Shopware"]="shopware"
+    CMS_SIGNS["BigCommerce"]="bigcommerce"
+    # (Wix, Weebly, Shopify, Webflow) 
+    # (OctoberCMS)
+
+    # Searchsploit keywords
+    KEYWORDS=""
+    # Search for CMS
+    check_cms=0
+    TECHS=()
+    for TECH in "${!CMS_SIGNS[@]}"; do
+        if grep -iqE "${CMS_SIGNS[$TECH]}" "$TMP_HTML" "$TMP_HEADERS"; then
+            echo -e "        ${GREEN}+${NC} Probable CMS detected: $TECH"
+            KEYWORDS="$TECH"
+            check_cms=1
+            TECHS+=("$TECH")
+
+            # If CMS found, search for version
+            check_ver=0
+            while read -r line; do
+                content=$(echo "$line" | grep -Eo 'content="[^"]+"' | cut -d\" -f2)
+                echo -e "        ${GREEN}+${NC} CMS version: $content"
+                KEYWORDS="$KEYWORDS $content"
+                check_ver=1
+            done < <(grep -i '<meta name="generator"' "$TMP_HTML" | grep -i "$KEYWORDS")
+
+            # If CMS and version do searchsploit
+            if [[ $check_ver == 1 ]]; then
+                echo
+                echo -e "      ${PURPLE}> searchsploit${NC} -w $KEYWORDS"
+                searchsploit -w $KEYWORDS
+            fi
+        fi
+    done
+    if [[ $check_cms == 0 ]]; then
+        TECHS+=("NO_CMS_FOUND")
+        echo -e "        ${RED}[!]${NC} No CMS found"
+    fi
+    echo
+
+    #=== If agressive mode go deeper ===
+    if [[ $AGRESSIVE == 1 ]]; then
+        for CMS in ${TECHS[@]}; do
+            [[ -v CMS ]] && CMSALYZER
+        done
+    fi
+
+    #=== JS Frameworks ===
+    echo -e "    ${BLUE}[+]${NC} Searching for JS Frameworks signatures ${CYAN}(Passive)${NC}"
+    declare -A JS_SIGNS
+
+    JS_SIGNS["Vue.js"]="vue.js|vue.runtime|data-v-"
+    JS_SIGNS["React"]="react|react-dom|data-reactroot"
+    JS_SIGNS["Angular"]="angular.min.js|ng-version|ng-app"
+    JS_SIGNS["Ember.js"]="ember.min.js|id=\"ember"
+    JS_SIGNS["Backbone.js"]="backbone.min.js"
+    JS_SIGNS["Bootstrap"]="bootstrap.min.css|bootstrap.min.js"
+    JS_SIGNS["jQuery"]="jquery.min.js|jquery.js|jquery"
+    JS_SIGNS["Svelte"]="svelte\.js|svelte-hydration|svelte-routing"
+    JS_SIGNS["Alpine.js"]="alpinejs|x-data=|x-bind:"
+    JS_SIGNS["Mithril.js"]="mithril\.js|m\.mount"
+    JS_SIGNS["Preact"]="preact|preact\.min\.js"
+    JS_SIGNS["LitElement"]="lit-element|lit-html"
+    JS_SIGNS["Next.js"]="__next|next\.js"
+    JS_SIGNS["Nuxt.js"]="nuxt\.js"
+    JS_SIGNS["RxJS"]="rxjs"
+    JS_SIGNS["Tailwind CSS"]="tailwind"
+    JS_SIGNS["Material UI"]="Mui|Material-UI"
+    JS_SIGNS["Lodash"]="lodash|_\.js"
+    JS_SIGNS["Moment.js"]="moment\.js"
+    JS_SIGNS["Chart.js"]="Chart\.js|chartjs"
+    JS_SIGNS["D3.js"]="d3\.js|d3-selection"
+
+    check_frame=0
+    for FRAMEW in "${!JS_SIGNS[@]}"; do
+        if grep -iqE "${JS_SIGNS[$FRAMEW]}" "$TMP_HTML" "$TMP_HEADERS"; then
+            echo -e "        ${GREEN}+${NC} Framework: $FRAMEW"
+            check_frame=1
+
+            grep -iEo "([a-z\-]+\.)?($FRAMEW)[\.-]([0-9]+\.[0-9]+(\.[0-9]+)?)" "$TMP_HTML" | sort -u | while read -r ver; do
+                echo -e "        ${GREEN}+${NC} Framework version: $ver"
+                echo
+                echo -e "      ${PURPLE}> searchsploit${NC} -w $FRAMEW $ver"
+                searchsploit -w "$FRAMEW" "$ver"
+            done
+        fi
+    done
+    [[ $check_frame == 1 ]] && echo
+
+    #=== Servers and back-end ===
+    echo -e "    ${BLUE}[+]${NC} Searching for Servers and Back-end signatures ${CYAN}(Passive)${NC}"
+    declare -A SERVER_SIGNS
+    SERVER_SIGNS["Apache"]="Server: Apache|Apache/|mod_rewrite"
+    SERVER_SIGNS["Nginx"]="Server: nginx|nginx/"
+    SERVER_SIGNS["LiteSpeed"]="Server: LiteSpeed|litespeed"
+    SERVER_SIGNS["IIS"]="Server: Microsoft-IIS|ASP.NET"
+    SERVER_SIGNS["Caddy"]="Server: Caddy|caddyserver"
+
+    SERVER_SIGNS["Express.js"]="X-Powered-By: Express"
+    SERVER_SIGNS["Flask"]="Server: Werkzeug|Python/|Flask"
+    SERVER_SIGNS["Django"]="csrftoken|Set-Cookie: django|X-Frame-Options: DENY"
+    SERVER_SIGNS["Ruby on Rails"]="Set-Cookie: _rails_|X-Runtime:|mod_rails"
+    SERVER_SIGNS["Laravel"]="X-Powered-By: Laravel|Set-Cookie: laravel"
+    SERVER_SIGNS["Symfony"]="Set-Cookie: symfony|X-Generator: Symfony|/bundles/framework"
+
+
+    check_back=0
+    for BACK in "${!SERVER_SIGNS[@]}"; do
+      if grep -iqE "${SERVER_SIGNS[$BACK]}" "$TMP_HTML" "$TMP_HEADERS"; then
+        echo -e "        ${GREEN}+${NC} Back-end: $BACK"
+        check_back=1
+      fi
+    done
+    [[ $check_back == 1 ]] && echo
+
+    #=== Database engines ===
+    echo -e "    ${BLUE}[+]${NC} Searching for Database engines signatures ${CYAN}(Passive)${NC}"
+    declare -A DB_SIGNS
+
+    DB_SIGNS["MySQL"]="MySQL server error|You have an error in your SQL syntax|mysqli_|SQLSTATE\[HY000\]"
+    DB_SIGNS["PostgreSQL"]="PostgreSQL query failed|pg_connect\(|PostgreSQL.*ERROR"
+    DB_SIGNS["SQLite"]="SQLite exception|SQLITE_ERROR|SQLite3::"
+    DB_SIGNS["MongoDB"]="MongoError|MongoDB.Driver|mongodb://"
+    DB_SIGNS["Redis"]="RedisException|Connection refused.*6379"
+    DB_SIGNS["MariaDB"]="MariaDB server|MariaDB error"
+
+    DB_SIGNS["MySQL"]="MySQL server error|You have an error in your SQL syntax|mysqli_|SQLSTATE\[HY000\]"
+    DB_SIGNS["PostgreSQL"]="PostgreSQL query failed|pg_connect\(|PostgreSQL.*ERROR"
+    DB_SIGNS["SQLite"]="SQLite exception|SQLITE_ERROR|SQLite3::"
+    DB_SIGNS["MongoDB"]="MongoError|MongoDB.Driver|mongodb://|Connection refused.*mongodb|auth failed|network error|timeout"
+    DB_SIGNS["Redis"]="RedisException|Connection refused.*6379|LOADING Redis is loading the dataset in memory|NOAUTH Authentication required"
+    DB_SIGNS["MariaDB"]="MariaDB server|MariaDB error"
+    DB_SIGNS["Cassandra"]="com.datastax.driver.core.exceptions|timeout during query execution|Invalid query|connection refused"
+    DB_SIGNS["DynamoDB"]="ResourceNotFoundException|ProvisionedThroughputExceededException|ValidationException|ThrottlingException"
+    DB_SIGNS["CouchDB"]="not_found|db unavailable|conflict|unauthorized"
+    DB_SIGNS["Elasticsearch"]="ElasticsearchException|NoNodeAvailableException|ClusterBlockException|search_phase_execution_exception"
+    DB_SIGNS["GraphQL"]="GraphQL error|GraphQL::ExecutionError|ValidationError|Cannot query field|Field \"[^\"]+\" not found"
+
+    check_db=0
+    for DB in "${!DB_SIGNS[@]}"; do
+      if grep -iqE "${DB_SIGNS[$DB]}" "$TMP_HTML"; then
+        echo -e "        ${GREEN}+${NC} Probable DB: $DB"
+        check_db=1
+      fi
+    done
+    [[ $check_db == 1 ]] && echo
+
+    tmp_html=$(mktemp)
+    echo "$tmp_html" >> "$TEMP_FILES"
+
+    check_db=0
+    COMMON_ENDPOINT_PATHS["GraphQL"]="/graphql|/v1/graphql|/api/graphql|/graphql-api|/graphiql|/graphql/execute"
+    COMMON_ENDPOINT_PATHS["gRPC"]="/grpc|/grpc.api|/grpc.health.v1.Health/Check"
+    COMMON_ENDPOINT_PATHS["NoSQL_Databases"]="/mongo|/mongodb|/redis|/cassandra|/dynamodb|/couchdb|/elasticsearch"
+    for path in "${COMMON_ENDPOINT_PATHS[@]}"; do
+        path_status=$(curl "${CURLOPTIONS[@]}" -o "$tmp_html" -w "%{http_code}" "${BASE_URL}${path}")
+
+        if [[ "$path_status" == "200" ]]; then
+            echo -e "        ${GREEN}+${NC} Found DB path: $path ${GREEN}[$path_status]${NC}"
+            check_db=1
+        fi
+    done
+    [[ $check_db == 1 ]] && echo
+
+    rm -f "$tmp_html"
+
+    #=== Third-party platforms ===
+    echo -e "    ${BLUE}[+]${NC} Looking for Third-party platforms ${CYAN}(Passive)${NC}"
+    declare -A THIRD_SIGNS
+
+    THIRD_SIGNS["Google Analytics"]="google-analytics|ga.js|gtag.js|analytics.js"
+    THIRD_SIGNS["Google Tag Manager"]="googletagmanager"
+    THIRD_SIGNS["Facebook Pixel"]="fbevents.js|facebook.com/tr"
+    THIRD_SIGNS["Hotjar"]="hotjar"
+    THIRD_SIGNS["New Relic"]="newrelic"
+    THIRD_SIGNS["Vimeo"]="vimeo.com|player.vimeo.com"
+    THIRD_SIGNS["YouTube"]="youtube.com|ytimg.com"
+    THIRD_SIGNS["Wix"]="wix.com|static.parastorage.com|wixHTML"
+    THIRD_SIGNS["Weebly"]="weebly.com|weebly"
+    THIRD_SIGNS["Duda"]="duda.co"
+    THIRD_SIGNS["Yampi"]="yampi.app"
+    THIRD_SIGNS["Shopify"]="cdn.shopify.com|shopify-assets"
+    THIRD_SIGNS["Stripe"]="stripe.com"
+    THIRD_SIGNS["PayPal"]="paypal.com"
+    THIRD_SIGNS["Mailchimp"]="mailchimp.com|chimpstatic.com"
+    THIRD_SIGNS["SendGrid"]="sendgrid.net"
+    THIRD_SIGNS["Intercom"]="intercom.io|widget.intercom.io"
+    THIRD_SIGNS["FullStory"]="fullstory.com"
+    THIRD_SIGNS["Optimizely"]="optimizely"
+    THIRD_SIGNS["Segment"]="segment.com|cdn.segment.com"
+    THIRD_SIGNS["HubSpot"]="hubspot"
+    THIRD_SIGNS["Zendesk"]="zendesk.com|zdassets.com"
+    THIRD_SIGNS["Matomo"]="matomo.js|piwik.js"
+    THIRD_SIGNS["Pardot"]="pardot"
+
+    check_third=0
+    for THIRD in "${!THIRD_SIGNS[@]}"; do
+      if grep -iqE "${THIRD_SIGNS[$THIRD]}" "$TMP_HTML" "$TMP_HEADERS"; then
+        echo -e "        ${GREEN}+${NC} Third-party: $THIRD"
+        check_third=1
+      fi
+    done
+    [[ $check_third == 1 ]] && echo
+
+    #=== Cloud providers / services ===
+    echo -e "    ${BLUE}[+]${NC} Looking for Cloud providers ${CYAN}(Passive)${NC}"
+    declare -A CLOUD_SIGNS
+
+    CLOUD_SIGNS["Amazon AWS"]="amazonaws|aws.amazon|cloudfront|s3.amazonaws.com|x-amz-cf-"
+    CLOUD_SIGNS["Microsoft Azure"]="azurewebsites.net|cloudapp.net|azure.microsoft.com|msedge.net|x-azure-ref|x-ms-edge-ref"
+    CLOUD_SIGNS["Google Cloud Platform"]="googleapis.com|appspot.com|storage.googleapis.com|gcp|x-google-appengine"
+    CLOUD_SIGNS["Cloudflare"]="cloudflare|cf-ray|cdn-cgi|cloudflare.com"
+    CLOUD_SIGNS["Fastly"]="fastly.net|fastly"
+    CLOUD_SIGNS["Akamai"]="akamai.net|akamaized.net|akamaitechnologies.com|akamai"
+    CLOUD_SIGNS["DigitalOcean"]="digitaloceanspaces.com|digitalocean.com"
+    CLOUD_SIGNS["Heroku"]="herokuapp.com"
+    CLOUD_SIGNS["Oracle Cloud"]="oraclecloud.com|ocp.oraclecloud.com"
+    CLOUD_SIGNS["IBM Cloud"]="bluemix.net|ibm.com"
+    CLOUD_SIGNS["Alibaba Cloud"]="aliyuncs.com|alibaba-cloud.com"
+    CLOUD_SIGNS["Vercel"]="vercel.app|now.sh"
+    CLOUD_SIGNS["Netlify"]="netlify.app|netlify.com"
+    CLOUD_SIGNS["StackPath"]="stackpathdns.com|stackpathcdn.com"
+    CLOUD_SIGNS["Tencent Cloud"]="tencentcloudapi.com|tencentcloud.com"
+    CLOUD_SIGNS["Squarespace CDN"]="squarespace.com|squarespace-session"
+    CLOUD_SIGNS["Firebase"]="firebaseio.com|firebaseapp.com"
+    CLOUD_SIGNS["Cloudinary"]="cloudinary.com"
+
+    check_cloud=0
+    for CLOUD in "${!CLOUD_SIGNS[@]}"; do
+      if grep -iqE "${CLOUD_SIGNS[$CLOUD]}" "$TMP_HTML" "$TMP_HEADERS"; then
+        echo -e "        ${GREEN}+${NC} Cloud: $CLOUD"
+        check_cloud=1
+      fi
+    done
+    [[ $check_cloud == 1 ]] && echo
+
+
+    #=== Forms actions ===
+    echo -e "    ${BLUE}[+]${NC} Forms action analysis ${CYAN}(Passive)${NC}"
+    if grep -oiPq "(?i)<form\s+[^>]*action=(['\"])[^\1]" "$TMP_HTML"; then
+        echo -e "        ${GREEN}+${NC} Forms action detected:"
+
+        grep -oiP "(?i)<form\s+[^>]*action=(['\"])\K.*?(?=\1)" "$TMP_HTML" | sort -u | while read -r action; do
+            echo -e "          ${GREEN}>${NC} $action"
+        done
+        echo
+    fi
+    #=== Scripts src ===
+    echo -e "    ${BLUE}[+]${NC} Script src analysis ${CYAN}(Passive)${NC}"
+    if grep -oiPq "(?i)<script\s+[^>]*src=(['\"])[^\1]" "$TMP_HTML"; then
+        echo -e "        ${GREEN}+${NC} Scripts src detected:"
+
+        grep -oiP "(?i)<script\s+[^>]*src=(['\"])\K.*?(?=\1)" "$TMP_HTML" | sort -u | while read -r src; do
+            echo -e "          ${GREEN}>${NC} $src"
+        done
+        echo
+    fi
+    #=== Iframe src ===
+    echo -e "    ${BLUE}[+]${NC} Iframe src analysis ${CYAN}(Passive)${NC}"
+    if grep -oiPq "(?i)<iframe\s+[^>]*src=(['\"])[^\1]" "$TMP_HTML"; then
+        echo -e "        ${GREEN}+${NC} Iframe src detected:"
+
+        grep -oiP "(?i)<iframe\s+[^>]*src=(['\"])\K.*?(?=\1)" "$TMP_HTML" | sort -u | while read -r src; do
+            echo -e "          ${GREEN}>${NC} $src"
+        done
+        echo
+    fi
+
+    # If Inhaler activated look for links
+    if [[ $INHALER == 1 ]]; then
+        #=== A href ===
+        echo -e "    ${BLUE}[+]${NC} A href analysis ${CYAN}(Passive)${NC}"
+        if grep -oiPq "(?i)<a\s+[^>]*href=(['\"])[^\1]" "$TMP_HTML"; then
+            echo -e "        ${GREEN}+${NC} A href detected:"
+
+            grep -oiP "(?i)<a\s+[^>]*href=(['\"])\K.*?(?=\1)" "$TMP_HTML" | sort -u | while read -r href; do
+                echo -e "          ${GREEN}>${NC} $href"
+            done
+            echo
+        fi
+        #=== Link href ===
+        echo -e "    ${BLUE}[+]${NC} Link href analysis ${CYAN}(Passive)${NC}"
+        if grep -oiPq "(?i)<link\s+[^>]*href=(['\"])[^\1]" "$TMP_HTML"; then
+            echo -e "        ${GREEN}+${NC} Link href detected:"
+
+            grep -oiP "(?i)<link\s+[^>]*href=(['\"])\K.*?(?=\1)" "$TMP_HTML" | sort -u | while read -r href; do
+                echo -e "          ${GREEN}>${NC} $href"
+            done
+            echo
+        fi
+    fi
+    echo
+    echo
+}
+
+#=== Agressive mode ===
+EXPLORE() {
+    # Temp html content
+    local tmp_html=$(mktemp)
+    echo "$tmp_html" >> "$TEMP_FILES"
+
+    # CMS paths
+    echo -e "        ${BLUE}[+]${NC} Common Paths ${YELLOW}(Direct access)${NC}"
+    for path in "${CMS_PATHS[@]}"; do
+        path_status=$(curl "${CURLOPTIONS[@]}" -o "$tmp_html" -w "%{http_code}" "${BASE_URL}${path}")
+
+        if [[ "$path_status" == "200" ]]; then
+            echo -e "            ${GREEN}+${NC} ${BASE_URL}${path}${GREEN}[$path_status]${NC}"
+        fi
+        # Sleep
+        [[ -v TIMER ]] && sleep $(echo "$TIMER/1000" | bc -l)
+    done
+
+    # Sensitive files
+    echo -e "        ${BLUE}[+]${NC} Verification of configuration, backups, and sensitive files ${YELLOW}(Direct access)${NC}"
+    for f in "${SENSITIVE_FILES[@]}"; do
+        file_status=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "${BASE_URL}${f}")
+
+        if [[ "$file_status" == "200" ]]; then
+            echo -e "              ${GREEN}+${NC} ${BASE_URL}${f} ${GREEN}[$file_status]${NC}"
+        fi
+        # Sleep
+        [[ -v TIMER ]] && sleep $(echo "$TIMER/1000" | bc -l)
+    done
+
+    # Admin paths
+    echo -e "        ${BLUE}[+]${NC} Checking the admin page ${YELLOW}(Direct access)${NC}"
+    for path in "${ADMIN_PATHS[@]}"; do
+        admin_status=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "${BASE_URL}${path}")
+
+        if [[ "$admin_status" == "200" ]]; then
+            echo -e "              ${GREEN}+${NC} ${BASE_URL}${path} ${GREEN}[$admin_status]${NC} --> ${RED}[!] ${NC}Admin panel detected"
+        fi
+        # Sleep
+        [[ -v TIMER ]] && sleep $(echo "$TIMER/1000" | bc -l)
+    done
+
+    # Directories
+    echo -e "        ${BLUE}[+]${NC} Verifying directory indexing ${YELLOW}(Direct access)${NC}"
+    for dir in "${DIRS[@]}"; do
+        dir_status=$(curl "${CURLOPTIONS[@]}" -o "$tmp_html" -w "%{http_code}" "${BASE_URL}${dir}")
+
+        if [[ "$dir_status" == "200" ]]; then
+            contents=$(cat "$tmp_html" | grep -i 'Index of')
+
+            if [[ -n "$contents" ]]; then
+                echo -e "              ${GREEN}+${NC} ${BASE_URL}${dir} ${GREEN}[$dir_status]${NC} --> ${RED}[!] ${NC}Directory index enabled"
+            else
+                echo -e "              ${GREEN}+${NC} ${BASE_URL}${dir} ${GREEN}[$dir_status]${NC}"
+            fi
+        fi
+        # Sleep
+        [[ -v TIMER ]] && sleep $(echo "$TIMER/1000" | bc -l)
+    done
+
+    # Known RCE
+    echo -e "        ${BLUE}[+]${NC} Search for known exposed PHP files for RCE ${YELLOW}(Direct access)${NC}"
+    for file in "${RCE_FILES[@]}"; do
+        status=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "${BASE_URL}${file}")
+        if [[ "$status" == "200" ]]; then
+            echo "            ${GREEN}+${NC} Potentially dangerous file exposed : ${BASE_URL}${file} ${GREEN}[$status]${NC}"
+        fi
+        # Sleep
+        [[ -v TIMER ]] && sleep $(echo "$TIMER/1000" | bc -l)
+    done
+
+    echo
+    rm -f "$tmp_html"
+}
+
+#=== Basic checks for CMS ===
+CMSALYZER() {
+    # Temp html content
+    local tmp_html=$(mktemp)
+    echo "$tmp_html" >> "$TEMP_FILES"
+
+    echo -e "    ${GREEN}(CMSALYZER:)${NC}"
+
+    #================================================ WordPress ================================================
+    if [[ $CMS == "WordPress" ]]; then
+        source "$SCRIPT_WORKDIR/includes/cms/wordpress"
+        #WORDPRESS
+    #================================================ Drupal ================================================
+    elif [[ $CMS == "Drupal" ]]; then
+        source "$SCRIPT_WORKDIR/includes/cms/drupal"
+        #DRUPAL
+    #================================================ Joomla ================================================
+    elif [[ $CMS == "Joomla" ]]; then
+        source "$SCRIPT_WORKDIR/includes/cms/joomla"
+        #JOOMLA
+    #================================================ PrestaShop ================================================
+    elif [[ $CMS == "PrestaShop" ]]; then
+        source "$SCRIPT_WORKDIR/includes/cms/pretashop"
+        #PRETASHOP
+    #================================================ Magento ================================================
+    elif [[ $CMS == "Magento" ]]; then
+        source "$SCRIPT_WORKDIR/includes/cms/magento"
+        #MAGENTO
+    #================================================ MediaWiki ================================================
+    elif [[ $CMS == "MediaWiki" ]]; then
+        source "$SCRIPT_WORKDIR/includes/cms/mediawiki"
+        #MEDIAWIKI
+    #================================================ phpBB ================================================
+    elif [[ $CMS == "phpBB" ]]; then
+        source "$SCRIPT_WORKDIR/includes/cms/phpbb"
+        #PHPBB
+
+    #elif [[ $CMS == "TYPO3" ]]; then
+    #elif [[ $CMS == "ConcreteCMS" ]]; then
+    #elif [[ $CMS == "OpenCart" ]]; then
+    #elif [[ $CMS == "Bitrix" ]]; then
+    #elif [[ $CMS == "Ghost" ]]; then
+    #elif [[ $CMS == "ExpressionEngine" ]]; then
+    #elif [[ $CMS == "MODX" ]]; then
+    #elif [[ $CMS == "Umbraco" ]]; then
+    #elif [[ $CMS == "CraftCMS" ]]; then
+    #elif [[ $CMS == "VBulletin" ]]; then
+    #elif [[ $CMS == "Shopware" ]]; then
+    #elif [[ $CMS == "BigCommerce" ]]; then
+    #elif [[ $CMS == "Wix" ]]; then
+    #elif [[ $CMS == "Weebly" ]]; then
+    #elif [[ $CMS == "Webflow" ]]; then
+    #elif [[ $CMS == "October CMS" ]]; then
+    #elif [[ $CMS == "Shopify" ]]; then
+    #elif [[ $CMS == "Squarespace" ]]; then
+
+    #================================================ NO_CMS_FOUND ================================================
+    else
+        source "$SCRIPT_WORKDIR/includes/cms/nocms"
+        #NOCMS
+    fi
+
+    #=== Common analysis for all CMS ===
+    EXPLORE
+
+rm -f "$tmp_html"
+}
