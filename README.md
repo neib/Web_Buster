@@ -4,7 +4,7 @@ A Web search tool for subdomains, directories, files, and background information
 - <b>curl</b> : command-line tool for transferring data using URL syntax</br>
 - <b>bc</b> : bc GNU arbitrary precision calculator language</br>
 - <b>jq</b> : lightweight and flexible command-line JSON processor</br>
-- <b>searchsploit</b> : command-line tool for searching for exploits and vulnerabilities in the local Exploit-DB database (include in exploitdb package from Kali Linux)</br>
+- <b>searchsploit</b> : searching for exploits and vulnerabilities in the local Exploit-DB database (include in exploitdb package from Kali Linux)</br>
 <!-- `apt install curl bc jq exploitdb`</br> -->
 ## Usage
 `./buster.sh -m &lt;mode&gt; -u &lt;URL&gt; [-w &lt;wordlist&gt; [-i] [-z <milliseconds>] [-nc] [-f] [-p] [-A] [-v] [[-nC]] [[-ns]] [[-r]] [-P] [[-I]]]`</br>
