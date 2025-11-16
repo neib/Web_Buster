@@ -1,0 +1,86 @@
+#PRETASHOP() {
+    #=== Search for version ===
+    echo "    + Search for PrestaShop version"
+    version=$(grep -oP 'content="PrestaShop [^"]+"' "$TMP_HTML" | head -n1 | sed 's/content="//;s/"//')
+    if [[ -n "$version" ]]; then
+        echo "        + CMS Version: $version"
+    else
+        echo "    - Version not detected"
+    fi
+
+    #=== Theme ===
+    echo "    + Analysis of available themes"
+    themes=$(grep -oP 'themes/\K[^/"]+' "$TMP_HTML" | sort -u)
+    if [[ -n "$themes" ]]; then
+        echo "        + Themes detected:"
+        echo "$themes" | sed 's/^/          - /'
+    fi
+
+    #=== Modules ===
+    echo "    + Analysis of current modules"
+    declare -a modules=("ps_contactinfo" "ps_banner" "blockreassurance" "ps_featuredproducts" "ps_googleanalytics" "ps_facetedsearch")
+    for module in "${modules[@]}"; do
+        status=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "${BASE_URL}/modules/${module}/")
+        if [[ "$status" == "200" ]]; then
+            echo "          + Module found: $module"
+        fi
+    done
+
+    #=== Common paths ===
+    declare -a CMS_PATHS=(
+        "/classes/"
+        "/config/"
+        "/controllers/"
+        "/modules/"
+        "/themes/"
+        "/upload/"
+        "/download/"
+        "/translations/"
+        "/init.php"
+        "/install-dev/"
+        "/docs/"
+    )
+    #=== Sensitive files ===
+    declare -a SENSITIVE_FILES=(
+        "/config/settings.inc.php.bak"
+        "/config/settings.old"
+        "/admin/autoupgrade/tmp"
+        "/phpinfo.php"
+        "/dump.sql"
+        "/backup.sql"
+    )
+    #=== Admin panel ===
+    declare -a ADMIN_PATHS=(
+        "/admin/"
+        "/admin123/"
+        "/admin-dev/"
+        "/admin-old/"
+        "/adminps/"
+        "/ps_admin/"
+        "/admin/index.php"
+        "/admin123/index.php"
+        "/admin-dev/index.php"
+        "/admin-old/index.php"
+        "/adminps/index.php"
+        "/ps_admin/index.php"
+    )
+    #=== Directories ===
+    declare -a DIRS=(
+        "/modules/"
+        "/themes/"
+        "/img/"
+        "/download/"
+    )
+    #=== Known RCE ===
+    declare -a RCE_FILES=(
+        "/install/index.php"                                     # Unsecured installation accessible.
+        "/admin-dev/index.php"                                   # Potential vulnerability in default back office path
+        "/modules/filemanager/upload.php"                        # Vulnerable upload via FileManager
+        "/modules/filemanager/execute.php"                       # Vulnerable code execution via AJAX
+        "/modules/filemanager/ajax_calls.php"                    # Vulnerable AJAX endpoint
+        "/filemanager/dialog.php"                                # Exposed Endpoint FileManager
+        "/tools/upload.php"                                      # Unsecured uploads
+        "/js/jquery/plugins/filemanager/filemanager.php"         # Vulnerable PHP file manager in JS plugins
+        "/img/cms/timthumb.php"                                  # Timthumb vulnerable in CMS images folder
+    )
+#}
