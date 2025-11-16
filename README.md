@@ -1,10 +1,10 @@
 # Web Buster
 A Web search tool for subdomains, directories, files, and background information for a given URL.</br>
 ## Requirements
-- curl : command-line tool for transferring data using URL syntax</br>
-- bc : bc GNU arbitrary precision calculator language</br>
-- jq : lightweight and flexible command-line JSON processor</br>
-- searchsploit : command-line tool for searching for exploits and vulnerabilities in the local Exploit-DB database (include in exploitdb package from Kali Linux)</br>
+- <b>curl</b> : command-line tool for transferring data using URL syntax</br>
+- <b>bc</b> : bc GNU arbitrary precision calculator language</br>
+- <b>jq</b> : lightweight and flexible command-line JSON processor</br>
+- <b>searchsploit</b> : command-line tool for searching for exploits and vulnerabilities in the local Exploit-DB database (include in exploitdb package from Kali Linux)</br>
 <!-- `apt install curl bc jq exploitdb`</br> -->
 ## Usage
 `./buster.sh -m &lt;mode&gt; -u &lt;URL&gt; [-w &lt;wordlist&gt; [-i] [-z <milliseconds>] [-nc] [-f] [-p] [-A] [-v] [[-nC]] [[-ns]] [[-r]] [-P] [[-I]]]`</br>
