@@ -1,0 +1,36 @@
+#PHPBB() {
+    # Search for version
+    echo -e "        ${BLUE}[+]${NC} Search for phpBB version"
+    version=$(grep -oP 'phpBB [0-9]\.[0-9]+\.[0-9]+' "$TMP_HTML" | head -n1)
+    if [[ -n "$version" ]]; then
+      echo "            ${GREEN}+${NC} CMS version: $version"
+    fi
+
+    # Paths
+    declare -a CMS_PATHS=(
+      "/viewtopic.php"
+      "/viewforum.php"
+      "/memberlist.php"
+      "/ucp.php"
+      "/mcp.php"
+      "/posting.php"
+    )
+    declare -a SENSITIVE_FILES=(
+        "/config.php"
+        "/config.php.bak"
+        "/config.old"
+        "/config.txt"
+        "/backup.sql"
+        "/dump.sql"
+    )
+    declare -a ADMIN_PATHS=(
+        "/adm/"
+    )
+    declare -a DIRS=(
+        "/ext/"
+        "/styles/"
+        "/store/"
+        "/cache/"
+        "/install/"
+    )
+#}
