@@ -1,0 +1,669 @@
+#!/bin/bash
+
+# Search for subdomains, directories, files and background information for a given URL.
+# Usage: $0 -m <mode> -u <URL> -w <wordlist> [--ignore-cert] [-z <milliseconds>] [--no-check] [[--no-crt]] [[--no-slash]] [-f] [-v]
+# Example: $0 -m sub -u https://example.com
+#          $0 -m dir -u https://example.com/ -w directories.list
+#          $0 -m file -u https://example.com/dir/ -w files.list
+#          $0 -m scav -u https://example.com -a
+#          $0 -m crawl -u https://example.com -z 200
+
+
+# ---------------------------------------------------------------------------- #
+# Functions
+# ---------------------------------------------------------------------------- #
+#=== Print help ===
+usage() {
+    echo "            __        __   _     ____            _                       "
+    echo "---+++===[  \ \      / /__| |__ | __ ) _   _ ___| |_ ___ _ __            "
+    echo "             \ \ /\ / / _ \ '_ \|  _ \| | | / __| __/ _ \ '__|           "
+    echo "              \ V  V /  __/ |_) | |_) | |_| \__ \ ||  __/ |              "
+    echo "               \_/\_/ \___|_.__/|____/ \__,_|___/\__\___|_|    ]===+++---"
+    echo
+    echo "      A Web search tool for subdomains, directories, files and background information.          "
+    echo
+    echo
+    echo
+    echo -e "${BOLD}  Usage:${NC} $0 -m <mode> -u <URL> [options]"
+    echo
+    echo -e "${BOLD}Common arguments :${NC}"
+    echo "  -h, --help                                                  Display this help"
+    echo "  -m, --mode <mode>                                           Buster mode"
+    echo "  -u, --url <URL>                                             Target URL"
+    echo
+    echo -e "${BOLD}Available modes :${NC}"
+    echo "  sub    : Subdomain Buster           (Subdomain discovery)"
+    echo "  dir    : Directory Buster           (Directory discovery)"
+    echo "  file   : File Buster                (File discovery)"
+    echo "  scav   : Background Buster          (Background discovery)"
+    echo "  crawl  : Sitemap Buster             (Sitemap discovery)"
+    echo
+    echo
+    echo
+    echo -e "${BOLD} * Sub mode (Subdomain discovery) :${NC}"
+    echo "    This mode will retrieve the list of subdomains of the target based on Certificates Transparency Logs or by dictionary enumeration."
+    echo
+    echo -e "  ${BOLD}Required     :${NC} -u, --url <URL>                              Target URL"
+    echo
+    echo -e "  ${BOLD}Optional     :${NC} -w, --wordlist <file>                        Dictionary to use"
+    echo "                 -i, --ignore-cert                            'Insecure' SSL connection"
+    echo "                 -z, --timer <millisecondes>                  Wait time between requests"
+    echo "                 -nc, --no-check                              Do not test the site initially"
+    echo "                 -p, --proxy <[protocol://]host[:port]>       Use proxy"
+    echo "                 -c, --cookie <key=value[;key=value]>         Use cookies"
+    echo "                 -A, --user-agent <user-agent>                Custom User Agent"
+    echo "                 -v, --verbose                                Verbose mode"
+    echo "                 -nC, --no-crt (use with --wordlist)          Do not check Certificate Transparency Logs (crt.sh)"
+    echo "                 -f, --follow                                 Follow redirects"
+    echo "                 -P, --max-parallel <max-parallel>            Multiprocessing"
+    echo "                 -I, --inhaler                                Additional search for links"
+    echo
+    echo -en "  ${BOLD}Exemple      :${NC}"
+    echo " $0 --mode sub --url https://example.com"
+    echo
+    echo
+    echo
+    echo -e "${BOLD} * Dir mode (Directory discovery) :${NC}"
+    echo "    This mode will attempt to list all directories and subdirectories of a target based on a dictionary enumeration."
+    echo
+    echo -e "  ${BOLD}Required     :${NC} -u, --url <URL>                              Target URL"
+    echo "                 -w, --wordlist <file>                        Dictionary to use"
+    echo
+    echo -e "  ${BOLD}Optional     :${NC} -i, --ignore-cert                            'Insecure' SSL connection"
+    echo "                 -z, --timer <millisecondes>                  Wait time between requests"
+    echo "                 -nc, --no-check                              Do not test the site initially"
+    echo "                 -p, --proxy <[protocol://]host[:port]>       Use proxy"
+    echo "                 -c, --cookie <key=value[;key=value]>         Use cookies"
+    echo "                 -A, --user-agent <user-agent>                Custom User Agent"
+    echo "                 -v, --verbose                                Verbose mode"
+    echo "                 -f, --follow                                 Follow redirects"
+    echo "                 -P, --max-parallel <max-parallel>            Multiprocessing"
+    echo "                 -ns, --no-slash                              Do not add a final '/' to the directory name"
+    echo "                 -r, --recursive                              Recursive search"
+    echo
+    echo -en "  ${BOLD}Exemple      :${NC}"
+    echo " $0 --mode dir --url https://example.com --wordlist words.txt --verbose"
+    echo
+    echo
+    echo
+    echo -e "${BOLD} * File mode (File discovery) :${NC}"
+    echo "    This mode will attempt to list all files on a target based on a dictionary enumeration."
+    echo
+    echo -e "  ${BOLD}Required     :${NC} -u, --url <URL>                              Target URL"
+    echo "                 -w, --wordlist <file>                        Dictionary to use"
+    echo
+    echo -e "  ${BOLD}Optional     :${NC} -i, --ignore-cert                            'Insecure' SSL connection"
+    echo "                 -z, --timer <millisecondes>                  Wait time between requests"
+    echo "                 -nc, --no-check                              Do not test the site initially"
+    echo "                 -p, --proxy <[protocol://]host[:port]>       Use proxy"
+    echo "                 -c, --cookie <key=value[;key=value]>         Use cookies"
+    echo "                 -A, --user-agent <user-agent>                Custom User Agent"
+    echo "                 -v, --verbose                                Verbose mode"
+    echo "                 -f, --follow                                 Follow redirects"
+    echo "                 -P, --max-parallel <max-parallel>            Multiprocessing"
+    echo
+    echo -en "  ${BOLD}Exemple      :${NC}"
+    echo " $0 --mode file --url https://example.com --wordlist words.txt -z 200"
+    echo
+    echo
+    echo
+    echo -e "${BOLD} * Scav mode (Background information) :${NC}"
+    echo "    This mode will attempt to understand the target's architecture."
+    echo
+    echo -e "  ${BOLD}Required     :${NC} -u, --url <URL>                              Target URL"
+    echo
+    echo -e "  ${BOLD}Optional     :${NC} -i, --ignore-cert                            'Insecure' SSL connection"
+    echo "                 -z, --timer <millisecondes>                  Wait time between requests"
+    echo "                 -nc, --no-check                              Do not test the site initially"
+    echo "                 -p, --proxy <[protocol://]host[:port]>       Use proxy"
+    echo "                 -c, --cookie <key=value[;key=value]>         Use cookies"
+    echo "                 -A, --user-agent <user-agent>                Custom User Agent"
+    echo "                 -v, --verbose                                Verbose mode"
+    echo "                 -f, --follow                                 Follow redirects"
+    echo "                 -I, --inhaler                                Additional search for links"
+    echo "                 -a, --agressive                              More aggressive, more requests"
+    echo
+    echo -en "  ${BOLD}Exemple      :${NC}"
+    echo " $0 --mode scav --url https://example.com -a"
+    echo
+    echo
+    echo
+    echo -e "${BOLD} * Crawl mode (Homemade sitemap) :${NC}"
+    echo "    This mode will retrieve all internal links accessible from the given URL to build the target tree structure."
+    echo
+    echo -e "  ${BOLD}Required     :${NC} -u, --url <URL>                              Target URL"
+    echo
+    echo -e "  ${BOLD}Optional     :${NC} -i, --ignore-cert                            'Insecure' SSL connection"
+    echo "                 -z, --timer <millisecondes>                  Wait time between requests"
+    echo "                 -nc, --no-check                              Do not test the site initially"
+    echo "                 -p, --proxy <[protocol://]host[:port]>       Use proxy"
+    echo "                 -c, --cookie <key=value[;key=value]>         Use cookies"
+    echo "                 -A, --user-agent <user-agent>                Custom User Agent"
+    echo "                 -v, --verbose                                Verbose mode"
+    echo "                 -f, --follow                                 Follow redirects"
+    echo "                 -P, --max-parallel <max-parallel>            Multiprocessing"
+    echo
+    echo -en "  ${BOLD}Exemple      :${NC}"
+    echo " $0 --mode crawl --url https://example.com -f -i"
+    echo
+}
+
+#=== Argument checking ===
+check_options() {
+    local mode="$1"
+
+    # List of available options
+    local opts=""
+    [[ -n $URL ]] && opts+="url "
+    [[ -n $WORDS ]] && opts+="wordlist "
+    [[ $NOCERT -eq 1 ]] && opts+="ignore-cert "
+    [[ -n $TIMER ]] && opts+="timer "
+    [[ $NOCHECK -eq 1 ]] && opts+="no-check "
+    [[ -n $PROXY ]] && opts+="proxy "
+    [[ -n $UA ]] && opts+="user-agent "
+    [[ $VERBOSE -eq 1 ]] && opts+="verbose "
+    [[ $NOCRT -eq 1 ]] && opts+="no-crt "
+    [[ $NOSLASH -eq 1 ]] && opts+="no-slash "
+    [[ $RECURSIVE -eq 1 ]] && opts+="recursive "
+    [[ $FOLLOW -eq 1 ]] && opts+="follow "
+    [[ -n $MAXPARALLEL ]] && opts+="max-parallel "
+    [[ $INHALER -eq 1 ]] && opts+="inhaler "
+    [[ $AGRESSIVE -eq 1 ]] && opts+="agressive "
+    [[ -n $COOKIE ]] && opts+="cookie "
+
+    case "$mode" in
+        sub)
+            # Must
+            [[ -z $URL ]] && echo "Error: --url is required in mode sub" && exit 1
+            # Illegal
+            [[ $NOSLASH -eq 1 ]] && echo "Error: --no-slash illegal in mode sub" && exit 1
+            [[ $RECURSIVE -eq 1 ]] && echo "Error: --recursive illegal in mode sub" && exit 1
+            [[ $AGRESSIVE -eq 1 ]] && echo "Error: --aggressive illegal in mode sub" && exit 1
+            # no-crt requires wordlist
+            if [[ $NOCRT -eq 1 && -z $WORDS ]]; then
+                echo "Error: --no-crt requires --wordlist in mode sub"
+                exit 1
+            fi
+            # No wordlist means crt-only
+            [[ -z $WORDS ]] && CRTO=1
+            ;;
+        dir)
+            [[ -z $URL || -z $WORDS ]] && echo "Error: --url and --wordlist are required in mode dir" && exit 1
+            [[ $NOCRT -eq 1 ]] && echo "Error: --no-crt illegal in mode dir" && exit 1
+            [[ $INHALER -eq 1 ]] && echo "Error: --inhaler illegal in mode dir" && exit 1
+            [[ $AGRESSIVE -eq 1 ]] && echo "Error: --aggressive illegal in mode dir" && exit 1
+            ;;
+        file)
+            [[ -z $URL || -z $WORDS ]] && echo "Error: --url and --wordlist are required in mode file" && exit 1
+            [[ $NOCRT -eq 1 ]] && echo "Error: --no-crt illegal in mode file" && exit 1
+            [[ $INHALER -eq 1 ]] && echo "Error: --inhaler illegal in mode file" && exit 1
+            [[ $NOSLASH -eq 1 ]] && echo "Error: --no-slash illegal in mode file" && exit 1
+            [[ $RECURSIVE -eq 1 ]] && echo "Error: --recursive illegal in mode file" && exit 1
+            [[ $AGRESSIVE -eq 1 ]] && echo "Error: --aggressive illegal in mode file" && exit 1
+            ;;
+        scav)
+            [[ -z $URL ]] && echo "Error: --url is required in mode scav" && exit 1
+            [[ $NOCRT -eq 1 ]] && echo "Error: --no-crt illegal in mode scav" && exit 1
+            [[ $NOSLASH -eq 1 ]] && echo "Error: --no-slash illegal in mode scav" && exit 1
+            [[ $RECURSIVE -eq 1 ]] && echo "Error: --recursive illegal in mode scav" && exit 1
+            [[ -n $WORDS ]] && echo "Error: --wordlist illegal in mode scav" && exit 1
+            [[ $MAXPARALLEL > 0 ]] && echo "Error: --max-parallel illegal in mode scav" && exit 1
+            [[ $NOCHECK -eq 1 ]] && echo "Error: --no-check illegal in mode scav" && exit 1
+            ;;
+        crawl)
+            [[ -z $URL ]] && echo "Error: --url is required in mode crawl" && exit 1
+            [[ $NOCRT -eq 1 ]] && echo "Error: --no-crt illegal in mode crawl" && exit 1
+            [[ $NOSLASH -eq 1 ]] && echo "Error: --no-slash illegal in mode crawl" && exit 1
+            [[ $RECURSIVE -eq 1 ]] && echo "Error: --recursive illegal in mode crawl" && exit 1
+            [[ -n $WORDS ]] && echo "Error: --wordlist illegal in mode crawl" && exit 1
+            [[ $INHALER -eq 1 ]] && echo "Error: --inhaler illegal in mode crawl" && exit 1
+            [[ $AGRESSIVE -eq 1 ]] && echo "Error: --aggressive illegal in mode crawl" && exit 1
+            [[ $NOCHECK -eq 1 ]] && echo "Error: --no-check illegal in mode crawl" && exit 1
+            ;;
+        *)
+            echo "Error: Unknown mode '$mode'"
+            exit 1
+            ;;
+    esac
+}
+
+#=== SIGINT ===
+on_sigint() {
+    # Wait for the remaining jobs
+    wait
+    # Clean files
+    echo " Clean up..."
+    clean
+    echo "The program terminated prematurely."
+    exit 1
+}
+# Catch SIGINT
+trap on_sigint SIGINT
+
+#=== Clean temp files ===
+clean() {
+    while read temp_file; do
+        if [[ -f "$temp_file" ]]; then
+            rm -f "$temp_file"
+        fi
+    done < "$TEMP_FILES"
+    rm -f "$TEMP_FILES"
+}
+
+
+#=== Includes ===
+SCRIPT_WORKDIR=$(dirname "$(readlink -f '$0')")
+
+source "$SCRIPT_WORKDIR/includes/BUSTER"
+source "$SCRIPT_WORKDIR/includes/CTL"
+source "$SCRIPT_WORKDIR/includes/SCAVENGER"
+source "$SCRIPT_WORKDIR/includes/CRAWLER"
+
+
+#=== Init Color + Bold ===
+#RED='\033[0;31m' # No bold
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+PURPLE='\033[1;35m'
+CYAN='\033[1;36m'
+BOLD='\033[1m'
+# Reset
+NC='\033[0m'
+
+# ---------------------------------------------------------------------------- #
+# Argument management
+# ---------------------------------------------------------------------------- #
+#=== No argument, print Usage and exit ===
+if [[ $# -eq 0 ]]; then
+    echo -e "${BOLD}---+++===[ Web Buster ]===+++---${NC}\n A Web search tool for subdomains, directories, files and background information.\n"
+    echo -e "    ${BOLD}Usage:${NC} $0 -m <mode> -u <URL> [options]\n"
+    echo -e "Type '$0 --help' for more information about available options."
+    exit 1
+fi
+
+#=== Index ===
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -h|--help) usage; exit 0 ;;
+        -m|--mode) MODE=$2; shift ;;
+        -u|--url) URL="$2"; shift ;;
+        -w|--wordlist) WORDS="$2"; shift ;;
+        -i|--ignore-cert) NOCERT=1 ;;
+        -z|--timer) TIMER=$2; shift ;;
+        -nc|--no-check) NOCHECK=1 ;;
+        -p|--proxy) PROXY="$2"; shift ;;
+        -A|--user-agent) UA="$2"; shift ;;
+        -v|--verbose) VERBOSE=1 ;;
+        -nC|--no-crt) NOCRT=1 ;;
+        -ns|--no-slash) NOSLASH=1 ;;
+        -r|--recursive) RECURSIVE=1 ;;
+        -f|--follow) FOLLOW=1 ;;
+        -P|--max-parallel) MAXPARALLEL=$2; shift ;;
+        -I|--inhaler) INHALER=1 ;;
+        -c|--cookie) COOKIE="$2"; shift ;;
+        -a|--agressive) AGRESSIVE=1 ;;
+        *) echo "Error : Bad argument $1."; exit 1 ;;
+    esac
+    shift
+done
+# Check the options by mode
+check_options "$MODE"
+
+
+#=== Multiprocessing ===
+if [[ -v MAXPARALLEL && ! "$MAXPARALLEL" =~ ^[0-9]+$ ]]; then
+    echo -e "Error : Multiprocessing must be expressed an integer."
+    exit 1
+elif [[ -v MAXPARALLEL ]]; then
+    # Useful for multiprocess management
+    pids=()
+fi
+
+#=== If a timer is defined, it must be an integer ===
+if [[ -v TIMER ]]; then
+    if [[ ! "$TIMER" =~ ^[0-9]+$ ]]; then
+        echo -e "Error : Time must be expressed in milliseconds."
+        exit 1
+    fi
+fi
+
+#=== Check whether the URL begins with HTTP or HTTPS ===
+if [[ $URL =~ ^(https?://)([^/]+) ]]; then
+    protocol=${BASH_REMATCH[1]}  # "https://"
+    domain=${BASH_REMATCH[2]}    # "domain.com"
+
+    if [[ "$MODE" == "file" || "$MODE" == "dir" ]]; then
+        # The string does not end with a slash
+        if [[ ! "$URL" =~ /$ ]]; then
+            URL="$URL/"
+        fi
+    fi
+else
+    echo -e "Error : Bad URL format."
+    exit 1
+fi
+
+#=== Basic curl setup ===
+# Silent mode
+CURLOPTIONS=("-s")
+# User agent
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+# Custom user agent
+[[ -v UA ]] && USER_AGENT="$UA"
+CURLOPTIONS+=("-A" "$USER_AGENT")
+# Proxy
+if [[ -v PROXY ]]; then
+    proxy_regex='^((http|socks4|socks5)://)?[^:/ ]+(:[0-9]+)?$'
+    # Check that the proxy is correct
+    if [[ "$PROXY" =~ $proxy_regex ]]; then
+        CURLPROXY="--proxy $PROXY"
+        CURLOPTIONS+=("--proxy" "$PROXY")
+        echo -e "${RED}[!]${NC} Proxy in use : $PROXY"
+    else
+        echo "Error : Invalid proxy format: $PROXY"
+        exit 1
+    fi
+else
+    CURLPROXY=""
+fi
+# Do not check certificates
+[[ $NOCERT == 1 ]] && CURLOPTIONS+=("-k")
+# Follow redirects
+[[ $FOLLOW == 1 ]] && CURLOPTIONS+=("-L")
+# Cookies
+[[ -v COOKIE ]] && CURLOPTIONS+=("--cookie" "$COOKIE")
+
+
+#=== Temporary file indexing temporary files ===
+TEMP_FILES=$(mktemp)
+
+#=== Temporary counter file for parallelism ===
+TEMP_COUNTER=$(mktemp)
+echo 0 > "$TEMP_COUNTER"
+echo "$TEMP_COUNTER" >> "$TEMP_FILES"
+
+#=== If recursive, prepare storage for new targets ===
+if [[ $RECURSIVE == 1 ]]; then
+    OLD_LOOT=$(mktemp);
+    EFFECTIVE_LOOT=$(mktemp);
+    echo "$OLD_LOOT" >> "$TEMP_FILES";
+    echo "$EFFECTIVE_LOOT" >> "$TEMP_FILES";
+    # Recursion level
+    RECULEV=0
+fi
+
+
+#=== Title ===
+echo -e "${GREEN}            __        __   _     ____            _                       ${NC}"
+echo -e "${GREEN}---+++===[  \ \      / /__| |__ | __ ) _   _ ___| |_ ___ _ __            ${NC}"
+echo -e "${GREEN}             \ \ /\ / / _ \ '_ \|  _ \| | | / __| __/ _ \ '__|           ${NC}"
+echo -e "${GREEN}              \ V  V /  __/ |_) | |_) | |_| \__ \ ||  __/ |              ${NC}"
+echo -e "${GREEN}               \_/\_/ \___|_.__/|____/ \__,_|___/\__\___|_|    ]===+++---${NC}"
+echo
+echo -e "      A Web search tool for subdomains, directories, files and background information."
+echo
+echo
+echo
+[[ "$MODE" == "sub" ]] && echo -e "${GREEN}[+]${NC} MODE : Subdomain Buster"
+[[ "$MODE" == "file" ]] && echo -e "${GREEN}[+]${NC} MODE : File Buster"
+[[ "$MODE" == "dir" ]] && echo -e "${GREEN}[+]${NC} MODE : Directory Buster"
+[[ "$MODE" == "scav" ]] && echo -e "${GREEN}[+]${NC} MODE : Background Buster"
+[[ "$MODE" == "crawl" ]] && echo -e "${GREEN}[+]${NC} MODE : Sitemap Buster"
+echo -e "${GREEN}[+]${NC} TARGET : $URL\n"
+
+#=== Warns the user that the connection should be considered insecure ===
+[[ $NOCERT == 1 ]] && echo -e "${BOLD}--ignore-cert is enabled :${NC} Treat all connections as 'insecure'."
+
+
+# ---------------------------------------------------------------------------- #
+# MAIN
+# ---------------------------------------------------------------------------- #
+#=== Check that the target is reachable ===
+if [[ $NOCHECK != 1 ]]; then
+    # Create temporary files to store the HTTP response and index them
+    TMP_HTML=$(mktemp)
+    TMP_HEADERS=$(mktemp)
+    echo "$TMP_HTML" >> "$TEMP_FILES"
+    echo "$TMP_HEADERS" >> "$TEMP_FILES"
+
+    echo " Checking that the target is reachable..."
+    # Curl
+    CODE_AND_LOCATION=$(curl "${CURLOPTIONS[@]}" -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
+    CHECK_CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+    FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
+
+    # Target is down
+    if [[ "$CHECK_CODE" == "000" ]]; then
+        echo -e "\nError : The provided URL seems to be down. Try ‘--ignore-cert’ option"
+        clean
+        exit 1
+    fi
+
+    if [[ "$CHECK_CODE" =~ ^30 ]]; then
+    echo
+    # Activate redirects
+    while true; do
+        echo -en "${RED}[!] ${NC}"
+        read -p "The page requests a redirect. Do you want to follow them? (yes/No): " answ
+        answ=${answ:-n}
+
+        case "$answ" in
+            # Yes : replay the request
+            [yY]|[yY][eE][sS])
+                echo -e "  ${GREEN}>${NC} Redirects will be accepted."
+                FOLLOW=1
+                CURLOPTIONS+=("-L")
+                # Curl again
+                CODE_AND_LOCATION=$(curl "${CURLOPTIONS[@]}" -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $URL)
+                CHECK_CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
+                FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
+
+                # Target is down
+                if [[ "$CHECK_CODE" == "000" ]]; then
+                    echo -e "\nError : The provided URL seems to be down. Try ‘--ignore-cert’ option"
+                    clean
+                    exit 1
+                fi
+                break
+                ;;
+            # No
+            [nN]|[nN][oO])
+                echo -e "  ${GREEN}>${NC} Let's keep going like this."
+                break
+                ;;
+            # Bad answer
+            *)
+                echo "Please answer with ‘y’ (yes) or ‘n’ (no)."
+                ;;
+        esac
+    done
+    #echo
+    fi
+
+    # Target is up, resolve DNS name
+    IPADDR=$(dig $domain +short)
+    #IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=$domain&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
+    #IPADDR=$(curl -s "https://cloudflare-dns.com/dns-query?name=$domain&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
+    echo -e "${BLUE}[+]${NC} $URL is up ${GREEN}[$CHECK_CODE]${NC} ($IPADDR)"
+
+    # If redirects know where
+    if [[ $FOLLOW == 1 ]]; then
+        if [[ -v FINAL_LOCATION ]]; then
+            if [[ $URL != $FINAL_LOCATION ]]; then
+
+                echo -e "${RED}[!]${NC} You have been redirected to: $FINAL_LOCATION"
+                # Collect protocol and domain
+                if [[ $FINAL_LOCATION =~ ^(https?://)([^/]+) ]]; then
+                    protocol=${BASH_REMATCH[1]}
+                    domain=${BASH_REMATCH[2]}
+                fi
+            fi
+        fi
+    fi
+
+
+    #=== Crawler ===
+    if [[ "$MODE" == "crawl" ]]; then
+        SITEMAP=$(mktemp)
+        TEMP_SITEMAP=$(mktemp)
+        echo "$SITEMAP" >> "$TEMP_FILES"
+        echo "$TEMP_SITEMAP" >> "$TEMP_FILES"
+        crawl_counter=0
+
+        crawl_target="${protocol}${domain}"
+        loc="$FINAL_LOCATION"
+
+        CRAWL "$loc"
+        #=== Wait for the remaining jobs ===
+        [[ ! -z $MAXPARALLEL ]] && wait
+        SORTCRAWL
+        # If in crawl mode then close the program
+        clean
+        echo
+        echo "The program terminated successfully."
+        exit 0
+    fi
+
+
+    #=== Scaver ===
+    if [[ "$MODE" == "scav" ]]; then
+        while true; do
+            echo
+            echo -en "${RED}[!] ${NC}"
+            read -p "Would you like to update the local EXPLOIT-DB database? (yes/NO): " answ
+            answ=${answ:-n}
+
+            case "$answ" in
+                [yY]|[yY][eE][sS])
+                    searchsploit --update
+                    echo -e "  ${GREEN}>${NC} Update complete"
+                    break
+                    ;;
+                [nN]|[nN][oO])
+                    echo -e "  ${GREEN}>${NC} You can update it manually using : ${BOLD}searchsploit${NC} --update"
+                    break
+                    ;;
+                *)
+                    echo "Please answer with ‘y’ (yes) or ‘n’ (no)."
+                    ;;
+            esac
+        done
+
+        SCAV
+        # If in scav mode then close the program
+        clean
+        echo -e "The program terminated successfully."
+        exit 0
+    fi
+
+    # Remove temp HTTP response
+    rm -f "$TMP_HTML" "$TMP_HEADERS"
+fi
+
+
+#=== CTL (crt.sh|Certificate Search) ===
+if [[ "$MODE" == "sub" ]]; then
+    [[ $NOCRT != 1 ]] && CTL
+    #=== Close the program if crt-only is set to 1 ===
+    if [[ $CRTO == 1 ]]; then
+        clean
+        echo -e "The program terminated successfully."
+        exit 0
+    fi
+fi
+
+
+
+#=== Dictionary path ===
+echo -e "  ${GREEN}>${NC} Browsing dictionary in progress...\n"
+
+# Loop on the dictionary
+while IFS= read -r WHAT; do
+    # Prepare the target URL
+    if [[ "$MODE" == "sub" ]]; then
+        TARGET="$protocol$WHAT.$domain"
+        CONTROL_CODE="000"
+        SUBDOMAIN="$WHAT.$domain"
+        LOOT="subdomains"
+
+    elif [[ "$MODE" == "file" ]]; then
+        TARGET="$URL$WHAT"
+        CONTROL_CODE="404"
+        LOOT="files"
+
+    elif [[ "$MODE" == "dir" ]]; then
+        if [[ $NOSLASH == 1 ]]; then
+            TARGET="$URL$WHAT"
+        else
+            TARGET="$URL$WHAT/"
+        fi
+        CONTROL_CODE="404"
+        LOOT="directories"
+    fi
+
+    # Multiprocessing
+    if [[ ! -z $MAXPARALLEL ]]; then
+        BUSTER &
+
+        pids+=($!)
+        # Limit the number of concurrent jobs
+        while (( ${#pids[@]} >= MAXPARALLEL )); do
+            for i in "${!pids[@]}"; do
+                if ! kill -0 "${pids[i]}" 2>/dev/null; then
+                    unset 'pids[i]'
+                fi
+            done
+            # Reindex table
+            pids=("${pids[@]}")
+            sleep 0.1
+        done
+    # Non-parallel execution
+    else
+        BUSTER
+    fi
+# Use wordlist as input
+done < "$WORDS"
+
+#=== Wait for the remaining jobs ===
+if [[ ! -z $MAXPARALLEL ]]; then
+    wait
+    pids=()
+fi
+
+#=== Recursive mode ===
+if [[ $RECURSIVE == 1 ]]; then
+    # Check for new items
+    mapfile -t old < "$OLD_LOOT"
+    mapfile -t effective < "$EFFECTIVE_LOOT"
+    old_sorted=($(printf "%s\n" "${old[@]}" | sort -u))
+    effective_sorted=($(printf "%s\n" "${effective[@]}" | sort -u))
+
+    # If new items send to RECBUSTER
+    if [[ "${old_sorted[*]}" != "${effective_sorted[*]}" ]]; then
+        cp "$EFFECTIVE_LOOT" "$OLD_LOOT"
+        RECBUSTER
+    fi
+fi
+
+#=== Retrieve the number of items ===
+DISCOVERED=$(cat "$TEMP_COUNTER")
+
+#=== Clean ===
+clean
+
+#=== Nothing found ===
+if [[ $DISCOVERED == 0 ]]; then
+    if [[ NOCERT != 1 ]]; then
+        echo -e "${RED}[!]${NC} No $LOOT were found. Try ‘--ignore-cert’ option.\n"
+    else
+        echo -e "${RED}[!]${NC} No $LOOT were found.\n"
+    fi
+#=== Success ===
+else
+    # Clear the last line if the HTTP code is not good
+    echo -e "\033[2K\r"
+    echo -e "${BLUE}[+]${NC} End of dictionary enumeration with $DISCOVERED item(s) found.\n"
+    echo -e "The program terminated successfully."
+fi
