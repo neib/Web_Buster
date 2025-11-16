@@ -1,0 +1,135 @@
+#DRUPAL() {
+    #=== Search for version ===
+    echo "    + Search for Drupal version"
+    # Search in meta generator (exposed via module or theme)
+    version_meta=$(grep -i '<meta name="Generator"' "$TMP_HTML" | grep -i 'Drupal' | grep -Eo 'content="[^"]+"' | head -n1 | cut -d\" -f2)
+
+    if [[ "$version_meta" == *Drupal* ]]; then
+        echo "    + CMS version: $version_meta"
+    else
+        # Attempt recovery from CHANGELOG.txt
+        changelog_content=$(curl "${CURLOPTIONS[@]}" "${BASE_URL}/CHANGELOG.txt" | head -n 10)
+        version_changelog=$(echo "$changelog_content" | grep -i '^Drupal' | head -n1)
+
+        if [[ -n "$version_changelog" ]]; then
+            echo "    + CMS version: $version_changelog"
+        else
+            echo "    - Version not detected"
+        fi
+    fi
+
+    #=== Exposed users ===
+    echo "    + Search for exposed users (pages /user/)"
+    for user_path in "/user" "/user/login" "/user/1"; do
+        user_code=$(curl "${CURLOPTIONS[@]}" -o "$tmp_html" -w "%{http_code}" "${BASE_URL}${user_path}")
+        if [[ "$user_code" == "200" ]]; then
+            echo "          + $user_path [$user_code]"
+
+            if [[ "$user_path" == "/user/1" ]]; then
+                # Basic extraction of page title
+                admin_name=$(grep -oP '(?<=<title>)(.*?)(?=</title>)' "$tmp_html" | head -n1)
+                if [[ -n "$admin_name" ]]; then
+                    echo "    + Admin name found in title: $admin_name"
+                fi
+            fi
+        fi
+    done
+
+    #=== Exposed REST API ===
+    echo "    + Search for exposed APIs/REST services"
+    declare -a endpoints=(
+        "/node"
+        "/user"
+        "/taxonomy_term"
+        "/comment"
+        "/file"
+        "/entity"
+        "/entity/"
+        "/views/"
+        "/rest/session/token"
+        "/user/login"
+        "/user/logout"
+    )
+    for endpoint in "${endpoints[@]}"; do
+        rest_code=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "${BASE_URL}${endpoint}")
+        if [[ "$rest_code" == "200" ]]; then
+            echo "          + REST endpoint $endpoint [$rest_code]"
+        fi
+    done
+
+    #=== Modules ===
+    echo "    + Exposed modules"
+    # Basic list of Drupal modules
+    declare -a modules=(
+        "views"
+        "ctools"
+        "webform"
+        "token"
+        "pathauto"
+        "metatag"
+        "admin_toolbar"
+    )
+    for mod in "${modules[@]}"; do
+        mod_path="${BASE_URL}/modules/${mod}/"
+        status=$(curl "${CURLOPTIONS[@]}" -o "$tmp_html" -w "%{http_code}" "$mod_path")
+        if [[ "$status" == "200" ]]; then
+            echo "          + Potential module detected: $mod"
+        fi
+    done
+
+    #=== Common paths ===
+    declare -a CMS_PATHS=(
+      "/user/login"
+      "/CHANGELOG.txt"
+      "/readme.txt"
+    )
+    #=== Sensitives files ===
+    declare -a SENSITIVE_FILES=(
+        "/sites/default/settings.php.bak"
+        "/sites/default/services.yml.bak"
+        "/sites/default/authorized_keys"
+        "/sites/default/files/logs/drupal.log"
+        "/sites/default/files/logs/drupal.log"
+        "/log/drupal.log"
+        "/logs/drupal.log"
+        "/admin/reports/dblog"
+        "/sites/default/files/logs/php_error.log"
+        "/sites/default/files/logs/error.log"
+        "/sites/default/files/logs/access.log"
+        "/sites/default/files/debug.log"
+    )
+    #=== Admin panel ===
+    declare -a ADMIN_PATHS=(
+        "/admin"
+        "/admin/content"
+        "/admin/people"
+        "/admin/modules"
+        "/admin/config"
+        "/admin/structure"
+        "/admin/reports"
+        "/admin/appearance"
+    )
+    #=== Directories ===
+    declare -a DIRS=(
+        "/modules/"
+        "/themes/"
+        "/sites/default/files/"
+        "/sites/default/files/logs/"
+    )
+    #=== Known RCE ===
+    declare -a RCE_FILES=(
+        "/core/install.php"                                 # Unsecured installation vulnerability in certain versions
+        "/core/scripts/install.php"                         # Sometimes accessible, related to installation
+        "/core/includes/file.inc"                           # Vulnerabilities in upload/file management
+        "/core/modules/file/file.module"                    # Old vulnerability upload
+        "/core/modules/media_library/media_library.module"  # Sensitive access errors
+        "/modules/views/ajax_view.php"                      # Potentially vulnerable to AJAX attacks
+        "/modules/ctools/ajax.php"                          # Code execution via vulnerable AJAX
+        "/modules/webform/webform_ajax.php"                 # Ajax injection in vulnerable versions
+        "/modules/token/token.module"                       # Information vulnerability if exposed
+        "/themes/classy/scripts/timthumb.php"               # Timthumb still used in some themes
+        "/modules/pathauto/pathauto.module"                 # Potential injection
+        "/modules/metatag/metatag.module"                   # Leak of sensitive information
+        "/modules/admin_toolbar/admin_toolbar.module"       # Exposed but less fragile
+    )
+#}
