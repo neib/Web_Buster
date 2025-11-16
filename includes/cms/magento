@@ -1,0 +1,79 @@
+#MAGENTO() {
+    #=== Search for version ===
+    echo "    + Search for Magento version"
+    version_meta=$(grep -i '<meta name="generator"' "$TMP_HTML" | grep -i 'Magento' | grep -Eo 'content="[^"]+"' | head -n1 | cut -d\" -f2)
+
+    if [[ "$version_meta" == *Magento* ]]; then
+        echo "    + CMS version: $version_meta"
+    else
+        magento_version=$(curl "${CURLOPTIONS[@]}" "${BASE_URL}/magento_version" | head -n 5)
+
+        if [[ -n "$magento_version" && "$magento_version" != *"404"* ]]; then
+            echo -n "    + CMS version: "
+            echo "$magento_version" | sed 's/^/      /'
+        else
+            echo "    - Version not detected"
+        fi
+    fi
+
+    #=== Users ===
+    echo "    + Users REST API check"
+    users_json=$(curl "${CURLOPTIONS[@]}" "${BASE_URL}/rest/V1/customers/search?searchCriteria=")
+    if echo "$users_json" | grep -q '"items"'; then
+        echo "        + REST API exposing user data detected"
+        echo "          > $users_json" | jq '.items[] | {id, email, firstname, lastname}' | head -n 5 | sed 's/^/          /'
+    else
+        echo "        - Users REST API not accessible or empty"
+    fi
+
+    #=== Modules ===
+    echo "    + Search for exposed modules/add-ons"
+    declare -a modules=(
+        "Magento_Customer"
+        "Magento_Checkout"
+        "Magento_AdminNotification"
+    )
+    for mod in "${modules[@]}"; do
+        mod_path="${BASE_URL}/static/adminhtml/${mod}/"
+        mod_status=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "$mod_path")
+        if [[ "$mod_status" == "200" ]]; then
+            echo "          + Module detected: $mod"
+        fi
+    done
+
+    #=== Common paths ===
+    declare -a CMS_PATHS=(
+        "/downloader"
+        "/LICENSE.txt"
+        "/README.txt"
+    )
+    #=== Sensitive files ===
+    declare -a SENSITIVE_FILES=(
+        "/pub/errors/local.xml"
+        "/errors/503.html"
+        "/static/adminhtml"
+    )
+    #=== Admin panel ===
+    declare -a ADMIN_PATHS=(
+        "/admin"
+    )
+    #=== Directories ===
+    declare -a DIRS=(
+        "/pub/static/"
+        "/static/adminhtml/"
+        "/var/report/"
+    )
+    #=== Known RCE ===
+    declare -a RCE_FILES=(
+        "/index.php/admin"                                   # chemin admin par défaut potentiellement vulnérable selon version
+        "/js/mage/adminhtml/backup.js"                       # scripts admin potentiellement vulnérables
+        "/js/mage/adminhtml/logger.js"                       # script vulnérable pouvant exposer des actions
+        "/downloader/index.php"                              # Composer/Installer legacy vulnérable
+        "/errors/processor.php"                              # Fichier d’erreurs vulnérable à RCE dans certaines versions
+        "/dev/tests/functional/index.php"                    # Scripts de test parfois accessibles publiquement
+        "/lib/internal/Magento/Framework/App/FrontController.php" # Core vulnérable dans versions anciennes
+        "/app/code/Magento/Adminhtml/Controller/Backup.php" # Exécution fichier backup vulnérable
+        "/lib/internal/Magento/Framework/DB/Adapter/Pdo/Mysql.php" # Possibilité RCE en injection si accessible
+        "/phpinfo.php"                                       # Souvent uploadé par erreur et dangereux
+    )
+#}
