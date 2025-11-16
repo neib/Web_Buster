@@ -1,0 +1,28 @@
+#MEDIAWIKI() {
+    declare -a CMS_PATHS=(
+        "/index.php"
+      "/api.php"
+      "/opensearch_desc.php"
+      "/includes/"
+      "/extensions/"
+      "/skins/"
+      "/wiki/"
+      "/load.php"
+    )
+
+    declare -a SENSITIVE_FILES=(
+        "/LocalSettings.php"
+        "/LocalSettings.php.bak"
+        "/LocalSettings.old"
+        "/config/index.php"
+    )
+
+    declare -a ADMIN_PATHS=(
+        "/login.php"
+    )
+
+    declare -a DIRS=(
+        "/extensions/"
+        "/skins/"
+    )
+#}
