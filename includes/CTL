@@ -1,0 +1,71 @@
+#=== Certificate Transparency Logs [ crt.sh|Certificate Search ] ===
+CTL() {
+    echo " Requesting crt.sh..."
+    # Get the JSON list
+    #req=$(curl "${CURLOPTIONS[@]}" "https://crt.sh/?q=${domain}&output=json")
+    req=$(curl -s "https://crt.sh/?q=${domain}&output=json")
+
+    if [ $? -ne 0 ] || [ -z "$req" ]; then
+        echo -e "[!] Information from crt.sh|Certificate Search are not available.\n"
+        return
+    fi
+
+    # Extract subdomains
+    mapfile -t subdomains < <(echo "$req" | jq -r '.[].name_value')
+
+    # Sort and remove duplicates
+    subdomains=($(printf "%s\n" "${subdomains[@]}" | sort -u))
+
+    echo -e "[!] Information from crt.sh|Certificate Search\n"
+    for subdomain in "${subdomains[@]}"; do
+        echo "  $subdomain"
+    done
+    echo
+    echo " Now checking which subdomains are up...."
+    echo -e "[!] Requesting in progress...\n"
+
+    # Checking which subdomains are up
+    for subdomain in "${subdomains[@]}"; do
+        TARGET="$protocol$subdomain"
+        CONTROL_CODE="000"
+        SUBDOMAIN="$subdomain"
+        # Multiprocessing
+        if [[ ! -z $MAXPARALLEL ]]; then
+            BUSTER &
+
+            pids+=($!)
+            # Limit the number of concurrent jobs
+            while (( ${#pids[@]} >= MAXPARALLEL )); do
+                for i in "${!pids[@]}"; do
+                    if ! kill -0 "${pids[i]}" 2>/dev/null; then
+                        unset 'pids[i]'
+                    fi
+                done
+                # Reindex table
+                pids=("${pids[@]}")
+                sleep 0.1
+            done
+        # Non-parallel execution
+        else
+            BUSTER
+        fi
+    done
+
+    # Wait for the remaining jobs
+    if [[ ! -z $MAXPARALLEL ]]; then
+        wait
+        pids=()
+    fi
+
+    local discovered=$(cat "$TEMP_COUNTER")
+    # Nothing found
+    if [[ $discovered == 0 ]]; then
+        echo -e "[!] None of the subdomains seem to be up...\n"
+    else
+        # Clear the last line if the HTTP code is not good
+        echo -e "\033[2K\r"
+        echo -e "[+] End of Certificate Transparency Logs with $discovered item(s) found.\n"
+    fi
+    # Reset global counter
+    echo 0 > "$TEMP_COUNTER"
+}
