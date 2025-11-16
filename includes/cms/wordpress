@@ -1,0 +1,149 @@
+#WORDPRESS() {
+    #=== Search for version ===
+    echo -e "        ${BLUE}[+]${NC} Search for WordPress version"
+    version_meta=$(grep -i '<meta name="generator"' "$TMP_HTML" | grep -i 'WordPress' | grep -Eo 'content="[^"]+"' | head -n1 | cut -d\" -f2)
+    if [[ -n "$version_meta" ]]; then
+    #if [[ "$version_meta" == *WordPress* ]]; then
+        echo -e "            ${GREEN}+${NC} CMS version: $version_meta"
+    else
+        version_feed=$(curl "${CURLOPTIONS[@]}" "$BASE_URL/feed" | grep -oP '<generator>https?://wordpress.org/\?v=\K[0-9.]+')
+        if [[ -n "$version_feed" ]]; then
+            echo -e "            ${GREEN}+${NC} CMS version: $version_feed"
+        #else
+        #    echo "            - Version not detected"
+        fi
+    fi
+
+    #=== Exposed users ===
+    echo -e "        ${BLUE}[+]${NC} Search for exposed users"
+    for id in {1..5}; do
+        user_url="${BASE_URL}/?author=${id}"
+        loc=$(curl "${CURLOPTIONS[@]}" -I "$user_url" | grep -i Location | awk '{print $2}' | tr -d '\r\n')
+        if [[ -n "$loc" && "$loc" != "$user_url" ]]; then
+            if [[ "$loc" == *"/author/"* ]]; then
+                #echo "            + User $id exposed to $loc"
+                username=$(grep -oP '/author/\K[^/]+' <<< "$loc")
+                echo -e "            ${GREEN}+${NC} "$user_url" redirects to $loc --> ${RED}[!] ${NC}User found: $id : $username"
+            else
+                echo -e "            ${GREEN}+${NC} "$user_url" redirects to $loc"
+            fi
+        fi
+    done
+
+    #=== Exposed REST API ===
+    echo -e "        ${BLUE}[+]${NC} Detection of exposed REST API"
+    api_users=$(curl "${CURLOPTIONS[@]}" "${BASE_URL}/wp-json/wp/v2/users")
+    if [[ -n "$api_users" && "$api_users" != "[]" ]]; then
+        echo -e "              ${GREEN}+${NC} Users exposed via REST API"
+        echo -e "                ${GREEN}>${NC} $(echo "$api_users" | jq -r '.[].name' | head -n 5 | sed 's/^/              /')"
+    fi
+
+    #=== XMLRPC.PHP ===
+    echo -e "        ${BLUE}[+]${NC} Analyze xmlrpc.php for vulnerabilities"
+    xml_status=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "${BASE_URL}/xmlrpc.php")
+    if [[ "$xml_status" == "200" ]]; then
+        echo -e "              ${GREEN}+${NC} xmlrpc.php [$xml_status]"
+        xml="<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>"
+        resp=$(curl "${CURLOPTIONS[@]}" -H "Content-Type: text/xml" -d "$xml" "${BASE_URL}/xmlrpc.php")
+        if echo "$resp" | grep -q "methodResponse"; then
+            echo -e "                ${GREEN}>${NC} Functional XML-RPC"
+        else
+            echo -e "                ${GREEN}>${NC} XML-RPC protected or not working"
+        fi
+    fi
+
+    #=== Theme ===
+    echo -e "        ${BLUE}[+]${NC} Main theme analysis"
+    theme_css_url=$(grep -oP 'wp-content/themes/\K[^/"]+' "$TMP_HTML" | sort -u)
+    if [[ -n "$theme_css_url" ]]; then
+        echo -e "              ${GREEN}+${NC} Theme detected: $theme_css_url"
+        theme_status=$(curl "${CURLOPTIONS[@]}"-o /dev/null -w "%{http_code}" "${BASE_URL}/wp-content/themes/${theme_css_url}/style.css")
+        if [[ "$theme_status" == "200" ]]; then
+            ver=$(curl "${CURLOPTIONS[@]}" "${BASE_URL}/wp-content/themes/${theme_css_url}/style.css" | grep -i version | head -n 1)
+            echo -e "                ${GREEN}>${NC} Theme version: $ver"
+        fi
+        # Test forgotten files
+        for f in "debug.log" "readme.txt"; do
+            f_status=$(curl "${CURLOPTIONS[@]}" -o /dev/null -w "%{http_code}" "${BASE_URL}/wp-content/themes/${theme_css_url}/$f")
+            [[ "$f_status" == "200" ]] && echo "                > /wp-content/themes/${theme_css_url}/$f [$f_status]"
+        done
+    fi
+
+    #=== Plugins ===
+    echo -e "        ${BLUE}[+]${NC} Search for known exposed plugins"
+    declare -a plugins=(
+        "contact-form-7"
+        "revslider"
+        "yoast"
+        "woocommerce"
+    )
+    for plugin in "${plugins[@]}"; do
+        plugin_status=$(curl "${CURLOPTIONS[@]}" -o "$tmp_html" -w "%{http_code}" "${BASE_URL}/wp-content/plugins/${plugin}/readme.txt")
+        if [[ "$plugin_status" == "200" ]]; then
+            echo -e "              ${GREEN}+${NC} Detected plugin: $plugin"
+
+            # Version
+            plugin_version=$(grep -iE 'stable tag:|version:' "$tmp_html" | head -n1 | sed -E 's/.*(stable tag:|version:)[[:space:]]*([^[:space:]]+).*/\2/I')
+
+            if [[ -n "$plugin_version" ]]; then
+                echo -e "                ${GREEN}>${NC} Plugin version: $plugin_version"
+            else
+            #    echo "                - Version not detected"fi
+            #fi
+        fi
+    done
+
+    #=== Common paths ===
+    declare -a CMS_PATHS=(
+        "/wp-login.php"
+        "/readme.html"
+        "/license.txt"
+        "/xmlrpc.php"
+    )
+    #=== Sensitives files ===
+    declare -a SENSITIVE_FILES=(
+        "/wp-config.php.bak"
+        "/wp-config.php.save"
+        "/wp-content/debug.log"
+        "/error_log"
+        "/error.log"
+        "/wp-content/plugins/contact-form-7/logs/error.log"
+        "/wp-content/plugins/woocommerce/logs/woocommerce.log"
+        "/wp-content/uploads/debug.log"
+        "/access.log"
+        "/access_log"
+        "/wp-content/w3tc/w3tc.log"
+        "/install.log"
+    )
+    #=== Admin panel ===
+    declare -a ADMIN_PATHS=(
+        "/wp-admin/"
+        "/wp-admin/index.php"
+    )
+    #=== Directories ===
+    declare -a DIRS=(
+        "/wp-admin/"
+        "/wp-json/wp/v2/"
+        "/wp-includes/"
+        "/wp-content/plugins/"
+        "/wp-content/themes/"
+    )
+    #=== Known RCE ===
+    declare -a RCE_FILES=(
+        "/wp-content/plugins/wp-file-manager/lib/php/connector.minimal.php" # CVE-2020-25213
+        "/wp-content/plugins/contact-form-7"
+        "/wp-content/plugins/contact-form-7/includes/file-upload.php" # upload vuln
+        "/ajax_eael_product_gallery.php"
+        "/wp-content/plugins/essential-addons-elementor/ajax_load_more.php" # Ajax vuln
+        "/wp-content/plugins/essential-addons-elementor/ajax_eael_product_gallery.php" # Ajax vuln
+        "/wp-content/plugins/code-snippets/snippet-functions.php" # injection PHP vuln
+        "/wp-content/plugins/pdf-2-post/pdf2post_include.php"                             # CVE-2025-32583
+        "/wp-content/plugins/backup-migration/includes/ajax-import.php"                    # CVE-2023-6553
+        "/wp-content/plugins/php-everywhere/includes/ajax_handler.php"                     # CVE-2022-24663
+        "/wp-content/plugins/everest-forms/includes/ajax-handler.php"                      # CVE-2025-3439
+        "/wp-content/plugins/woocommerce-wishlist/includes/ajax-handler.php"               # CVE-2025-47577
+        "/wp-content/plugins/bricks-builder/ajax-handler.php"                             # CVE-2024-25600
+        "/wp-content/plugins/media-library-assistant/includes/mla-stream-image.php"        # CVE-2023-4634
+        "/wp-content/themes/alone/inc/ajax-handler.php"                                   # CVE-2025-5394
+    )
+#}
