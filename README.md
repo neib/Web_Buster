@@ -3,7 +3,7 @@ A Web search tool for subdomains, directories, files, and background information
 ## Requirements
 - <b>bash</b> : GNU Bourne Again SHell (command interpreter derived from that of S. Bourne)
 - <b>curl</b> : command-line tool for transferring data using URL syntax</br>
-- <b>bc</b> : bc GNU arbitrary precision calculator language</br>
+- <b>bc</b> : GNU arbitrary precision calculator language</br>
 - <b>jq</b> : lightweight and flexible command-line JSON processor</br>
 ```
 apt install curl bc jq
