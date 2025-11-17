@@ -6,7 +6,7 @@ A Web search tool for subdomains, directories, files, and background information
 - <b>bc</b> : bc GNU arbitrary precision calculator language</br>
 - <b>jq</b> : lightweight and flexible command-line JSON processor</br>
 ```
-apt install bash curl bc jq
+apt install curl bc jq
 ```
 - <b>searchsploit</b> : searching for exploits and vulnerabilities in the local Exploit-DB database</br>
 https://gitlab.com/exploit-database/exploitdb</br>
