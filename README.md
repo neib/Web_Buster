@@ -4,8 +4,15 @@ A Web search tool for subdomains, directories, files, and background information
 - <b>curl</b> : command-line tool for transferring data using URL syntax</br>
 - <b>bc</b> : bc GNU arbitrary precision calculator language</br>
 - <b>jq</b> : lightweight and flexible command-line JSON processor</br>
+```
+apt install curl bc jq
+```
 - <b>searchsploit</b> : searching for exploits and vulnerabilities in the local Exploit-DB database</br>
-<!-- `apt install curl bc jq exploitdb`</br> -->
+https://gitlab.com/exploit-database/exploitdb</br>
+```
+git clone https://gitlab.com/exploit-database/exploitdb.git /opt/exploitdb
+ln -sf /opt/exploitdb/searchsploit /usr/local/bin/searchsploit
+```
 ## Usage
 ```
 ./buster -m <mode> -u <URL> [options]
