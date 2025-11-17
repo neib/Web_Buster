@@ -12,6 +12,7 @@ A Web search tool for subdomains, directories, files, and background information
 ```
 ## Examples
 ```
+./buster --help
 ./buster -m sub -u https://example.com
 ./buster -m dir -u https://example.com/ -w directories.list
 ./buster -m file -u https://example.com/dir/ -w files.list
