@@ -10,10 +10,10 @@ BUSTER() {
 
     # Activate scav mode
     if [[ "$MODE" == "sub" ]]; then
-        CODE_AND_LOCATION=$(curl "${CURLOPTIONS[@]}" -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" --max-time 10 $TARGET)
+        CODE_AND_LOCATION=$(curl "${CURLOPTIONS[@]}" -D "$TMP_HEADERS" -o "$TMP_HTML" -w "%{http_code} %{url_effective}" $TARGET)
     # No scav
     else
-        CODE_AND_LOCATION=$(curl "${CURLOPTIONS[@]}" -D "$TMP_HEADERS" -o /dev/null -w "%{http_code} %{url_effective}" --max-time 10 $TARGET)
+        CODE_AND_LOCATION=$(curl "${CURLOPTIONS[@]}" -D "$TMP_HEADERS" -o /dev/null -w "%{http_code} %{url_effective}" $TARGET)
     fi
     CODE=$(echo "$CODE_AND_LOCATION" | awk '{print $1}')
     FINAL_LOCATION=$(echo "$CODE_AND_LOCATION" | awk '{print $2}')
@@ -25,14 +25,21 @@ BUSTER() {
         # DNS name resolution for subdomain enumeration
         if [[ "$MODE" == "sub" ]]; then
             IPADDR="($(dig $SUBDOMAIN +short))"
-            #IPADDR=$(curl $CURLPROXY -s "https://cloudflare-dns.com/dns-query?name=$SUBDOMAIN&type=A" -H "accept: application/dns-json" | jq -r '.Answer[0].data')
         fi
-        # Show result
-        echo -e "${BLUE}[+]${NC} $TARGET ${GREEN}[$CODE]${NC} $IPADDR"
 
-        if [[ -v FINAL_LOCATION ]]; then
-            [[ $TARGET != $FINAL_LOCATION ]] && echo -e "${RED}[!]${NC} You have been redirected to: $FINAL_LOCATION"
-        fi
+        # Show result
+        [[ "$CHECK_CODE" =~ ^4 || "$CHECK_CODE" =~ ^5 ]] && COLORCODE="${YELLOW}[$CODE]${NC}"
+        [[ "$CHECK_CODE" =~ ^3 ]] && COLORCODE="${RED}[$CODE]${NC}"
+        [[ "$CHECK_CODE" =~ ^1 ]] && COLORCODE="${BLUE}[$CODE]${NC}"
+        [[ "$CHECK_CODE" =~ ^2 ]] && COLORCODE="${GREEN}[$CODE]${NC}"
+
+        echo -e "${BLUE}[+]${NC} $TARGET $COLORCODE $IPADDR"
+
+        #if [[ $FOLLOW == 1 ]]; then
+            if [[ -v FINAL_LOCATION ]]; then
+                [[ $TARGET != $FINAL_LOCATION ]] && echo -e "${RED}[!] ${NC}You have been redirected to: $FINAL_LOCATION"
+            fi
+        #fi
 
         # If sub mode do passive SCAV
         [[ "$MODE" == "sub" ]] && SCAV
@@ -106,7 +113,6 @@ RECBUSTER() {
                 else
                     TARGET="$TARGET$WHAT/"
                 fi
-
             fi
 
             # Multiprocessing
