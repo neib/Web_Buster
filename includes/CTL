@@ -2,8 +2,7 @@
 CTL() {
     echo " Requesting crt.sh..."
     # Get the JSON list
-    #req=$(curl "${CURLOPTIONS[@]}" "https://crt.sh/?q=${domain}&output=json")
-    req=$(curl -s "https://crt.sh/?q=${domain}&output=json")
+    req=$(curl -s --max-time $TIMEOUT "https://crt.sh/?q=${domain}&output=json")
 
     if [ $? -ne 0 ] || [ -z "$req" ]; then
         echo -e "[!] Information from crt.sh|Certificate Search are not available.\n"
